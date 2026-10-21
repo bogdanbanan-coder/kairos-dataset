@@ -21,11 +21,29 @@ _URL = re.compile(r"https?://|⟨URL⟩")
 _MENTION = re.compile(r"@\w+|⟨HANDLE⟩|⟨(?:PERSON|AUTHOR)[^⟩]*⟩")
 _HASHTAG = re.compile(r"#(?:\w+|⟨[^⟩]*⟩)")
 
-CONTENT_NUM = ["n_chars", "n_words", "n_lines", "n_hashtags", "n_mentions", "n_urls",
-               "has_question", "is_textless", "hour", "weekday"]
+CONTENT_NUM = [
+    "n_chars",
+    "n_words",
+    "n_lines",
+    "n_hashtags",
+    "n_mentions",
+    "n_urls",
+    "has_question",
+    "is_textless",
+    "hour",
+    "weekday",
+]
 CONTENT_CAT = ["content_type"]
-HISTORY_NUM = ["level", "hist_iqr", "days_since_prev", "log_followers"]
+HISTORY_NUM = [
+    "level",
+    "hist_iqr",
+    "days_since_prev",
+    "log_followers",
+]
 ARTEFACT_NUM = ["age_days", "hist_n"]
+
+# history
+ESTIMATES_NUM = ["hist_mean", "hist_sample_var"]
 
 
 def build(levelled: pd.DataFrame, followers: pd.Series) -> pd.DataFrame:
@@ -34,8 +52,14 @@ def build(levelled: pd.DataFrame, followers: pd.Series) -> pd.DataFrame:
     Takes the output of `label.author_level`, sorted by author and time, and
     reads each author's history from earlier posts only, as the level does.
     """
-    df = levelled.copy()
-    text = df["text"]
+    df = pd.DataFrame(index=levelled.index)
+    df["author"] = levelled["author"]
+    df["post"] = levelled["post"]
+    df["content_type"] = levelled["content_type"]
+    df["level"] = levelled["level"]
+    df["hist_n"] = levelled["hist_n"]
+    text = levelled["text"]
+    df["text"] = text
     df["n_chars"] = text.str.len()
     df["n_words"] = text.str.split().str.len().fillna(0)
     df["n_lines"] = text.str.count("\n") + 1
@@ -44,28 +68,54 @@ def build(levelled: pd.DataFrame, followers: pd.Series) -> pd.DataFrame:
     df["n_urls"] = text.str.count(_URL)
     df["has_question"] = text.str.contains("?", regex=False).astype(int)
     df["is_textless"] = (df["n_chars"] == 0).astype(int)
-    df["hour"] = df["posted_at"].dt.hour
-    df["weekday"] = df["posted_at"].dt.weekday
+    df["hour"] = levelled["posted_at"].dt.hour
+    df["weekday"] = levelled["posted_at"].dt.weekday
 
     # Reactions are one snapshot taken at crawl time, and an older post has had
     # longer to collect them. Age is a property of the collection, not of the
     # post, so it sits in its own group instead of hiding among the content.
-    df["age_days"] = (df["crawled_at"] - df["posted_at"]).dt.total_seconds() / 86400
+    df["age_days"] = (
+        levelled["crawled_at"] - levelled["posted_at"]
+    ).dt.total_seconds() / 86400
     df["age_days"] = df["age_days"].fillna(df["age_days"].median())
 
-    df["log_followers"] = np.log1p(df["author"].map(followers).fillna(0).clip(lower=0))
+    df["log_followers"] = np.log1p(
+        levelled["author"].map(followers).fillna(0).clip(lower=0)
+    )
 
-    # The spread of the author's past: a level alone cannot say whether this
-    # person is steady or erratic, and the cutoffs are global, so an erratic
-    # author spends more time in the outer classes.
-    past = df.groupby("author")["log_reactions"]
-    q75 = past.transform(
-        lambda s: s.shift(1).expanding(min_periods=MIN_HISTORY).quantile(.75))
-    q25 = past.transform(
-        lambda s: s.shift(1).expanding(min_periods=MIN_HISTORY).quantile(.25))
-    df["hist_iqr"] = (q75 - q25).fillna(0.0)
+    df["hist_iqr"] = 0.0
+    df["hist_mean"] = 0.0
+    df["hist_sample_var"] = 0.0
+    df["days_since_prev"] = -1.0
 
-    previous = df.groupby("author")["posted_at"].shift(1)
-    df["days_since_prev"] = ((df["posted_at"] - previous).dt.total_seconds() / 86400
-                             ).fillna(-1.0)
+    # `levelled` is sorted by author and publication time. For each post, use
+    # only the history collected before adding that post to it.
+    for _, posts in levelled.groupby("author", sort=False):
+        history = []
+        previous_posted_at = None
+
+        for author_post in posts.itertuples():
+            if len(history) >= MIN_HISTORY:
+                q25, q75 = np.quantile(history, [0.25, 0.75])
+                df.at[author_post.Index, "hist_iqr"] = q75 - q25
+
+                n = len(history)
+                mean = 1 / n * sum(history)
+                df.at[author_post.Index, "hist_mean"] = mean
+                df.at[author_post.Index, "hist_sample_var"] = (
+                    1 / (n - 1) * sum((mean - el) ** 2 for el in history)
+                )
+
+            if (
+                previous_posted_at is not None
+                and pd.notna(previous_posted_at)
+                and pd.notna(author_post.posted_at)
+            ):
+                df.at[author_post.Index, "days_since_prev"] = (
+                    author_post.posted_at - previous_posted_at
+                ).total_seconds() / 86400
+
+            history.append(author_post.log_reactions)
+            previous_posted_at = author_post.posted_at
+
     return df

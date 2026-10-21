@@ -8,8 +8,8 @@ crawled. It never reads the text and never looks at the media.
     python baseline.py
     python baseline.py --data D:/kairos
 
-Writes results/baseline.json and results/predictions/baseline.csv, in the format
-evaluate.py reads.
+Writes results/baseline.json and a prediction CSV for each feature configuration,
+in the format evaluate.py reads.
 """
 
 from __future__ import annotations
@@ -43,62 +43,111 @@ from kairos.metrics import score  # noqa: E402
 SEED = 42
 RESULTS = Path(__file__).resolve().parent / "results"
 NUMERIC = features.CONTENT_NUM + features.HISTORY_NUM + features.ARTEFACT_NUM
+CONFIGURATIONS = {
+    "baseline": NUMERIC,
+    "estimates": NUMERIC + features.ESTIMATES_NUM,
+}
 
 
-def model() -> Pipeline:
-    return Pipeline([
-        ("prep", ColumnTransformer([
-            ("num", StandardScaler(), NUMERIC),
-            ("cat", OneHotEncoder(handle_unknown="ignore", min_frequency=20),
-             features.CONTENT_CAT),
-        ])),
-        # Balanced class weights: the classes are 20 / 60 / 20, and an unweighted
-        # model leans on "typical", which macro-F1 punishes.
-        ("clf", HistGradientBoostingClassifier(max_iter=300, learning_rate=0.08,
-                                               class_weight="balanced",
-                                               random_state=SEED)),
-    ])
+def model(numeric_features: list[str] = NUMERIC) -> Pipeline:
+    return Pipeline(
+        [
+            (
+                "prep",
+                ColumnTransformer(
+                    [
+                        ("num", StandardScaler(), numeric_features),
+                        (
+                            "cat",
+                            OneHotEncoder(handle_unknown="ignore", min_frequency=20),
+                            features.CONTENT_CAT,
+                        ),
+                    ]
+                ),
+            ),
+            # Balanced class weights: the classes are 20 / 60 / 20, and an unweighted
+            # model leans on "typical", which macro-F1 punishes.
+            (
+                "clf",
+                HistGradientBoostingClassifier(
+                    max_iter=300,
+                    learning_rate=0.08,
+                    class_weight="balanced",
+                    random_state=SEED,
+                ),
+            ),
+        ]
+    )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Train and score the baseline.")
-    ap.add_argument("--data", default=DATA_DIR, help="unpacked release (default: data/)")
+    ap.add_argument(
+        "--data", default=DATA_DIR, help="unpacked release (default: data/)"
+    )
     args = ap.parse_args()
     t0 = time.time()
 
     labels = load_labels(args.data)
     levelled = author_level(load_posts(args.data))
-    table = labels.merge(features.build(levelled, load_followers(args.data)),
-                         on=["author", "post"], how="left", validate="one_to_one")
+    table = labels.merge(
+        features.build(levelled, load_followers(args.data)),
+        on=["author", "post"],
+        how="left",
+        validate="one_to_one",
+    )
     if table["level"].isna().any():
         raise SystemExit("some labelled posts have no level: is the release complete?")
 
     train, test = table[table["split"] == "train"], table[table["split"] == "test"]
-    print(f"train {len(train):,} posts / {train['author'].nunique():,} authors   "
-          f"test {len(test):,} posts / {test['author'].nunique():,} authors", flush=True)
+    print(
+        f"train {len(train):,} posts / {train['author'].nunique():,} authors   "
+        f"test {len(test):,} posts / {test['author'].nunique():,} authors",
+        flush=True,
+    )
 
-    predicted = model().fit(train, train["label"]).predict(test)
-    results = {"baseline": score(test["label"], predicted)}
+    (RESULTS / "predictions").mkdir(parents=True, exist_ok=True)
+    results = {}
+    for name, numeric_features in CONFIGURATIONS.items():
+        predicted = model(numeric_features).fit(train, train["label"]).predict(test)
+        results[name] = score(test["label"], predicted)
+        test[["author", "post"]].assign(label=predicted).to_csv(
+            RESULTS / "predictions" / f"{name}.csv", index=False
+        )
+
     # Two answers that need no model, for scale.
     mix = np.bincount(train["label"], minlength=3) / len(train)
     results["always_typical"] = score(test["label"], np.full(len(test), TYPICAL))
     results["random_in_train_mix"] = score(
-        test["label"], np.random.default_rng(SEED).choice(3, size=len(test), p=mix))
+        test["label"], np.random.default_rng(SEED).choice(3, size=len(test), p=mix)
+    )
 
-    print(f"\n{'':20s} {'macro-F1':>9s} {'QWK':>7s} {'accuracy':>9s}")
+    name_width = max(20, *(len(name) for name in results))
+    print(f"\n{'':{name_width}s} {'macro-F1':>9s} {'QWK':>7s} {'accuracy':>9s}")
     for name, m in results.items():
-        print(f"{name:20s} {m['macro_f1']:9.4f} {m['qwk']:7.4f} {m['accuracy']:9.4f}")
+        print(
+            f"{name:{name_width}s} {m['macro_f1']:9.4f} {m['qwk']:7.4f} {m['accuracy']:9.4f}"
+        )
 
-    (RESULTS / "predictions").mkdir(parents=True, exist_ok=True)
-    test[["author", "post"]].assign(label=predicted).to_csv(
-        RESULTS / "predictions" / "baseline.csv", index=False)
-    (RESULTS / "baseline.json").write_text(json.dumps({
-        "split": "test", "seed": SEED, "class_weight": "balanced",
-        "n_train": len(train), "n_test": len(test), "scikit_learn": sklearn.__version__,
-        "results": results,
-    }, indent=2), encoding="utf-8")
-    print(f"\nwrote results/baseline.json and results/predictions/baseline.csv "
-          f"({time.time() - t0:.0f}s)")
+    (RESULTS / "baseline.json").write_text(
+        json.dumps(
+            {
+                "split": "test",
+                "seed": SEED,
+                "class_weight": "balanced",
+                "n_train": len(train),
+                "n_test": len(test),
+                "scikit_learn": sklearn.__version__,
+                "results": results,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(
+        f"\nwrote results/baseline.json and prediction CSVs "
+        f"({time.time() - t0:.0f}s)"
+    )
 
 
 if __name__ == "__main__":
