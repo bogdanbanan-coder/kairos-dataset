@@ -4,7 +4,8 @@
 
 The CSV holds one row per test post: `author`, `post`, and either `label`
 (0 below, 1 typical, 2 above) or `class` (below / typical / above). The
-baseline writes its own to results/predictions/baseline.csv in this format.
+baseline.py writes files such as
+results/predictions/hist_gradient_boosting__baseline.csv in this format.
 """
 
 from __future__ import annotations

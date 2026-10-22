@@ -115,9 +115,23 @@ cd kairos-dataset
 pip install -r requirements.txt
 
 python -m kairos.label     # пересчитать метки и сверить их с labels.csv
-python baseline.py         # обучить и оценить базовую модель; на ноутбуке это займёт меньше минуты
-python evaluate.py --predictions results/predictions/baseline.csv
+python baseline.py         # сравнить конфигурации признаков и алгоритмы обучения
+python evaluate.py --predictions results/predictions/hist_gradient_boosting__baseline.csv
 ```
+
+Таблицы сравнения записываются в `results/metrics/hist_gradient_boosting.csv` и
+`results/metrics/logistic_regression.csv`. Каждая строка — конфигурация или
+контрольная стратегия; столбцы: `name`, `macro_f1`, `f1_below`, `f1_typical`,
+`f1_above`, `qwk`, `accuracy`.
+
+Строки `text_tf_idf`, `text_tf_idf_truncatedsvd` и
+`text_multilingual_e5_small` добавляют к базовым признакам одно представление
+всего текста поста. TF-IDF учитывает слова и пары слов; словарь ограничен
+1 024 признаками. Вариант с TruncatedSVD сжимает те же векторы TF-IDF до 128
+чисел. Вариант E5 использует `intfloat/multilingual-e5-small` (384 числа):
+текст после 512 токенов модели отбрасывается. Преобразования, которым нужен
+корпус текстов, обучаются только на обучающей выборке. При первом запуске
+модель E5 скачивается; готовые эмбеддинги сохраняются в `results/`.
 
 ## Базовая модель
 
@@ -186,8 +200,8 @@ python evaluate.py --predictions my_predictions.csv
 
 Скрипт выводит macro-F1, QWK, точность, F1 для каждого класса и матрицу ошибок.
 Если в файле отсутствует хотя бы один тестовый пост, скрипт его отклонит.
-Предсказания базовой модели в `results/predictions/baseline.csv` имеют тот же
-формат.
+Предсказания базовой модели в
+`results/predictions/hist_gradient_boosting__baseline.csv` имеют тот же формат.
 
 ## Работа с данными
 

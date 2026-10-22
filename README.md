@@ -98,9 +98,23 @@ cd kairos-dataset
 pip install -r requirements.txt
 
 python -m kairos.label     # recompute the labels and check them against labels.csv
-python baseline.py         # train and score the baseline, under a minute on a laptop
-python evaluate.py --predictions results/predictions/baseline.csv
+python baseline.py         # compare feature configurations and classifiers
+python evaluate.py --predictions results/predictions/hist_gradient_boosting__baseline.csv
 ```
+
+The comparison tables are `results/metrics/hist_gradient_boosting.csv` and
+`results/metrics/logistic_regression.csv`. Each row is a configuration or a
+reference strategy; the columns are `name`, `macro_f1`, `f1_below`,
+`f1_typical`, `f1_above`, `qwk`, and `accuracy`.
+
+The `text_tf_idf`, `text_tf_idf_truncatedsvd`, and
+`text_multilingual_e5_small` rows add one whole-post text representation to
+the baseline features. TF-IDF uses word unigrams and bigrams with at most
+1,024 terms. The SVD row compresses the same training-fitted TF-IDF vectors
+to 128 dimensions. The E5 row uses `intfloat/multilingual-e5-small` (384
+dimensions); text after 512 model tokens is truncated. Corpus-based text
+encoders are fitted on the training split only. The E5 model is downloaded on
+the first run, and computed embeddings are cached in `results/` for later runs.
 
 ## Baseline
 
@@ -162,7 +176,7 @@ python evaluate.py --predictions my_predictions.csv
 
 It prints macro-F1, QWK, accuracy, F1 by class and the confusion matrix, and refuses
 a file that misses a test post. The baseline's predictions,
-`results/predictions/baseline.csv`, are in this format.
+`results/predictions/hist_gradient_boosting__baseline.csv`, are in this format.
 
 ## Working with the data
 
