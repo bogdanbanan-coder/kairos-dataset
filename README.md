@@ -110,11 +110,31 @@ reference strategy; the columns are `name`, `macro_f1`, `f1_below`,
 The `text_tf_idf`, `text_tf_idf_truncatedsvd`, and
 `text_multilingual_e5_small` rows add one whole-post text representation to
 the baseline features. TF-IDF uses word unigrams and bigrams with at most
-1,024 terms. The SVD row compresses the same training-fitted TF-IDF vectors
-to 128 dimensions. The E5 row uses `intfloat/multilingual-e5-small` (384
-dimensions); text after 512 model tokens is truncated. Corpus-based text
+5,000 terms. The SVD row compresses the same training-fitted TF-IDF vectors
+to at most 128 dimensions, limited by the training matrix size. The E5 row uses
+`intfloat/multilingual-e5-small` (384 dimensions); text after 512 model tokens
+is truncated. Corpus-based text
 encoders are fitted on the training split only. The E5 model is downloaded on
 the first run, and computed embeddings are cached in `results/` for later runs.
+The `text_only_tf_idf_truncatedsvd` row uses only the SVD representation,
+without the baseline features. TF-IDF and SVD keep their actual dimensions;
+no zero columns are added.
+
+The `text_comparison_e5` and `text_comparison_tfidf` rows add three scalar
+features to the baseline: cosine similarity to the mean of the author's earlier
+post vectors, similarity to the mean of the last five earlier post vectors,
+and the sum of `cosine * resid` over the most similar earlier posts. The last
+feature considers the latest `N_LAST = 20` posts, excludes candidates without
+a finite residual, and selects up to `N_NEAREST = 5` by cosine similarity.
+These constants are in `kairos/features.py`. Only posts with a strictly earlier
+timestamp are used; the initial unlabelled posts contribute to text means.
+Undefined cosines and sums with no candidates are zero. Negative cosines are
+preserved. These rows contain the baseline and three scalar features, without
+the original text coordinates. The scalars use `StandardScaler`.
+
+All feature groups, including text vectors, are defined in `kairos/features.py`
+as lists of column names. See [the architecture guide](docs/ARCHITECTURE-SPINE.md)
+for the data flow and how to add features and experiments.
 
 ## Baseline
 

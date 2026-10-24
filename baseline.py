@@ -1,7 +1,8 @@
 """Compare feature configurations and classifiers on the held-out authors.
 
-The text configurations add one representation of the post to the baseline
-numerical and categorical features. Media is not used.
+Text configurations add post vectors or comparisons with earlier posts to the
+baseline features; the text-only configuration uses SVD vectors alone. Media is
+not used.
 
     python baseline.py
     python baseline.py --data D:/kairos
@@ -27,41 +28,33 @@ if sys.platform == "win32":
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from sklearn.compose import ColumnTransformer  # noqa: E402
 from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
-from sklearn.preprocessing import OneHotEncoder, StandardScaler  # noqa: E402
 from scipy import sparse  # noqa: E402
 
-from kairos import features, text_features  # noqa: E402
+from kairos import features  # noqa: E402
 from kairos.data import DATA_DIR, load_followers, load_labels, load_posts  # noqa: E402
 from kairos.label import TYPICAL, author_level  # noqa: E402
 from kairos.metrics import score  # noqa: E402
 
 SEED = 42
 RESULTS = Path(__file__).resolve().parent / "results"
-NUMERIC = features.CONTENT_NUM + features.HISTORY_NUM + features.ARTEFACT_NUM
+BASELINE = (
+    features.CONTENT_NUM
+    + features.HISTORY_NUM
+    + features.ARTEFACT_NUM
+    + features.CONTENT_CAT
+)
 CONFIGURATIONS = {
-    "baseline": (NUMERIC, None),
-    "estimates": (NUMERIC + features.ESTIMATES_NUM, None),
-    "text_tf_idf": (NUMERIC, "text_tf_idf"),
-    "text_tf_idf_truncatedsvd": (NUMERIC, "text_tf_idf_truncatedsvd"),
-    "text_multilingual_e5_small": (NUMERIC, "text_multilingual_e5_small"),
+    "baseline": BASELINE,
+    "estimates": BASELINE + features.ESTIMATES_NUM,
+    "text_tf_idf": BASELINE + features.TEXT_TFIDF_NUM,
+    "text_tf_idf_truncatedsvd": BASELINE + features.TEXT_SVD_NUM,
+    "text_only_tf_idf_truncatedsvd": features.TEXT_SVD_NUM,
+    "text_multilingual_e5_small": BASELINE + features.TEXT_E5_NUM,
+    "text_comparison_e5": BASELINE + features.TEXT_COMPARISON_E5_NUM,
+    "text_comparison_tfidf": BASELINE + features.TEXT_COMPARISON_TFIDF_NUM,
 }
-
-
-def preprocess(numeric_features: list[str]) -> ColumnTransformer:
-    return ColumnTransformer(
-        [
-            ("num", StandardScaler(), numeric_features),
-            (
-                "cat",
-                OneHotEncoder(handle_unknown="ignore", min_frequency=20),
-                features.CONTENT_CAT,
-            ),
-        ],
-        sparse_threshold=0.0,
-    )
 
 
 def gradient_boosting() -> HistGradientBoostingClassifier:
@@ -75,28 +68,13 @@ def gradient_boosting() -> HistGradientBoostingClassifier:
 
 
 def logistic_regression() -> LogisticRegression:
-    return LogisticRegression(
-        class_weight="balanced", solver="lbfgs", max_iter=1000
-    )
+    return LogisticRegression(class_weight="balanced", solver="lbfgs", max_iter=1000)
 
 
 MODELS = {
     "hist_gradient_boosting": gradient_boosting,
     "logistic_regression": logistic_regression,
 }
-
-
-def add_text(base, text, *, dense: bool):
-    """Append one text representation; keep TF-IDF sparse for regression."""
-    if text is None:
-        return base
-    base = base.astype(np.float32)
-    if sparse.issparse(text):
-        if dense:
-            text = text.toarray()
-        else:
-            return sparse.hstack((base, text), format="csr")
-    return np.hstack((base, text))
 
 
 def main() -> None:
@@ -124,6 +102,14 @@ def main() -> None:
         f"test {len(test):,} posts / {test['author'].nunique():,} authors",
         flush=True,
     )
+    selected_features = list(
+        dict.fromkeys(
+            column for columns in CONFIGURATIONS.values() for column in columns
+        )
+    )
+    train, test = features.prepare(
+        train, test, selected_features, RESULTS, history=levelled
+    )
 
     # Two answers that need no model, for scale.
     mix = np.bincount(train["label"], minlength=3) / len(train)
@@ -137,31 +123,17 @@ def main() -> None:
     (RESULTS / "predictions").mkdir(parents=True, exist_ok=True)
     (RESULTS / "metrics").mkdir(parents=True, exist_ok=True)
     results_by_model = {name: {} for name in MODELS}
-    prepared = {}
-    text_representations = None
-    for name, (numeric_features, text_name) in CONFIGURATIONS.items():
-        key = tuple(numeric_features)
-        if key not in prepared:
-            transformer = preprocess(numeric_features)
-            prepared[key] = (
-                transformer.fit_transform(train),
-                transformer.transform(test),
-            )
-        base_train, base_test = prepared[key]
-        if text_name is not None and text_representations is None:
-            text_representations = text_features.build(
-                train["text"].fillna("").tolist(),
-                test["text"].fillna("").tolist(),
-                RESULTS,
-            )
-        text_train, text_test = (
-            text_representations[text_name] if text_name is not None else (None, None)
-        )
+    for name, feature_names in CONFIGURATIONS.items():
+        transformer = features.preprocess(feature_names)
+        x_train = transformer.fit_transform(train)
+        x_test = transformer.transform(test)
         for model_name, make_model in MODELS.items():
-            dense = model_name == "hist_gradient_boosting"
-            x_train = add_text(base_train, text_train, dense=dense)
-            x_test = add_text(base_test, text_test, dense=dense)
-            predicted = make_model().fit(x_train, train["label"]).predict(x_test)
+            model_train, model_test = x_train, x_test
+            if model_name == "hist_gradient_boosting" and sparse.issparse(x_train):
+                model_train, model_test = x_train.toarray(), x_test.toarray()
+            predicted = (
+                make_model().fit(model_train, train["label"]).predict(model_test)
+            )
             results_by_model[model_name][name] = score(test["label"], predicted)
             test[["author", "post"]].assign(label=predicted).to_csv(
                 RESULTS / "predictions" / f"{model_name}__{name}.csv", index=False
