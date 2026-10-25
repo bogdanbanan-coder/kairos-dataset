@@ -1,14 +1,14 @@
-# Как устроены и добавляются признаки
+# How features are structured and added
 
-Все определения признаков, их вычисление и подготовка к модели находятся в
-`kairos/features.py`. `baseline.py` выбирает наборы столбцов, обучает модели и
-сохраняет предсказания и метрики.
+All feature definitions, calculations, and model preparation are in
+`kairos/features.py`. `baseline.py` selects column sets, trains models, and
+saves predictions and metrics.
 
-## ТОЧКИ КАСТОМИЗАЦИИ
+## CUSTOMIZATION POINTS
 
-### 1. Группы признаков и параметры в `kairos/features.py`
+### 1. Feature groups and parameters in `kairos/features.py`
 
-Основной блок настроек:
+The main settings block:
 
 ```python
 ARTEFACT_NUM = ["age_days", "hist_n"]
@@ -60,51 +60,51 @@ TEXT_E5_NUM = [f"text_e5_{i:03d}" for i in range(E5_DIMENSIONS)]
 TEXT_NUM = TEXT_TFIDF_NUM + TEXT_SVD_NUM + TEXT_E5_NUM
 ```
 
-| Настройка | Что можно менять |
+| Setting | What can be changed |
 |---|---|
-| `ARTEFACT_NUM` | Состав группы признаков сбора данных; значения вычисляются в `build()` |
-| `ESTIMATES_NUM` | Состав группы статистик истории; значения вычисляются в `build()` |
-| `FORMATTING_NUM` | 15 признаков оформления текста и отклонений от стиля автора; вычисляются в `build()` |
-| `FORMATTING_HISTORY` | Число строго предыдущих постов для среднего стиля; по умолчанию 20, независимо от `N_LAST` |
-| `N_LAST` | Число последних предыдущих постов для поиска похожих по косинусу и BM25 |
-| `N_NEAREST` | Число наиболее похожих кандидатов для суммы `cosine * resid` |
-| `TEXT_COMPARISON_E5_NUM`, `TEXT_COMPARISON_TFIDF_NUM` | Имена трёх выходных сравнений для каждого представления |
-| `BM25_TOP_N` | Максимальное число соседей с положительным BM25, общее для трёх классов |
-| `BM25_K1`, `BM25_B` | Насыщение частоты термина и компенсация длины документа в BM25 |
-| `TEXT_BM25_NUM` | Девять оценок соседей: количество, сумма BM25 и сумма `BM25 * resid` для каждого класса |
-| `TFIDF_MAX_FEATURES` | Максимальный размер словаря TF-IDF |
-| `SVD_COMPONENTS` | Максимальное число компонент SVD |
-| `E5_MODEL`, `E5_REVISION` | Модель эмбеддингов и её зафиксированная версия |
-| `E5_DIMENSIONS` | Ожидаемая размерность выбранной модели; должна совпадать с её фактическим выходом |
-| `TEXT_TFIDF_NUM`, `TEXT_SVD_NUM`, `TEXT_E5_NUM` | Автоматически сформированные имена координат из заданных размерностей |
-| `TEXT_NUM` | Объединение координат текстовых векторов для определения обработки в `preprocess()` |
+| `ARTEFACT_NUM` | Composition of the data collection feature group; values are computed in `build()` |
+| `ESTIMATES_NUM` | Composition of the history statistics group; values are computed in `build()` |
+| `FORMATTING_NUM` | 15 text formatting features and deviations from the author's style; computed in `build()` |
+| `FORMATTING_HISTORY` | Number of strictly earlier posts for the mean style; defaults to 20, independently of `N_LAST` |
+| `N_LAST` | Number of recent earlier posts used to find similar posts with cosine similarity and BM25 |
+| `N_NEAREST` | Number of most similar candidates for the `cosine * resid` sum |
+| `TEXT_COMPARISON_E5_NUM`, `TEXT_COMPARISON_TFIDF_NUM` | Names of the three output comparisons for each representation |
+| `BM25_TOP_N` | Maximum number of neighbors with positive BM25, shared across the three classes |
+| `BM25_K1`, `BM25_B` | Term frequency saturation and document length compensation in BM25 |
+| `TEXT_BM25_NUM` | Nine neighbor scores: count, BM25 sum, and `BM25 * resid` sum for each class |
+| `TFIDF_MAX_FEATURES` | Maximum TF-IDF vocabulary size |
+| `SVD_COMPONENTS` | Maximum number of SVD components |
+| `E5_MODEL`, `E5_REVISION` | Embedding model and its pinned revision |
+| `E5_DIMENSIONS` | Expected dimensionality of the chosen model; must match its actual output |
+| `TEXT_TFIDF_NUM`, `TEXT_SVD_NUM`, `TEXT_E5_NUM` | Coordinate names generated automatically from the specified dimensions |
+| `TEXT_NUM` | Combined text vector coordinates used to determine processing in `preprocess()` |
 
-Для окон требуется `1 <= N_NEAREST <= N_LAST`, оба значения — целые числа.
-Для BM25 `BM25_TOP_N` — положительное целое; если доступных соседей меньше,
-используются все подходящие. `BM25_K1 > 0`, `0 <= BM25_B <= 1`.
-Изменение `TFIDF_MAX_FEATURES` и `SVD_COMPONENTS` автоматически меняет списки
-возможных координат. Таблицы содержат только фактически полученные координаты,
-без дополнения нулями. Параметры `min_df`, `ngram_range` и другие настройки
-`TfidfVectorizer` меняются в `prepare()`.
+The windows require `1 <= N_NEAREST <= N_LAST`, with both values being integers.
+For BM25, `BM25_TOP_N` is a positive integer; if fewer neighbors are available,
+all suitable ones are used. `BM25_K1 > 0`, `0 <= BM25_B <= 1`.
+Changing `TFIDF_MAX_FEATURES` and `SVD_COMPONENTS` automatically changes the lists
+of possible coordinates. Tables contain only the coordinates actually produced,
+without zero padding. Parameters such as `min_df`, `ngram_range`, and other
+`TfidfVectorizer` settings are changed in `prepare()`.
 
-При добавлении или переименовании признака синхронизируйте список имён с
-вычислением столбца в `build()` или `prepare()`. Порядок трёх имён в каждой
-`TEXT_COMPARISON_*_NUM` соответствует порядку результатов `_text_comparison()`:
-вся история, последние пять, взвешенная сумма остатков. Для эксперимента с
-частью этих признаков выбирайте нужные имена в `CONFIGURATIONS`.
+When adding or renaming a feature, keep the name list synchronized with the
+column calculation in `build()` or `prepare()`. The order of the three names in
+each `TEXT_COMPARISON_*_NUM` matches the output order of `_text_comparison()`:
+all history, last five, weighted residual sum. To experiment with a subset of
+these features, select the desired names in `CONFIGURATIONS`.
 
-При замене E5 согласуйте модель, ревизию, размерность, формат входного текста
-и ключ кэша в `_e5_embeddings()`. `E5_DIMENSIONS` описывает выход модели и не
-уменьшает вектор сама по себе. Группы скалярных сравнений
-`TEXT_COMPARISON_*_NUM` остаются вне `TEXT_NUM`, чтобы проходить числовое
-масштабирование.
+When replacing E5, keep the model, revision, dimensionality, input text format,
+and cache key in `_e5_embeddings()` consistent. `E5_DIMENSIONS` describes the
+model output and does not reduce the vector by itself. The scalar comparison
+groups `TEXT_COMPARISON_*_NUM` remain outside `TEXT_NUM` so that they undergo
+numeric scaling.
 
-Наборы признаков для отдельных экспериментов выбираются в
-`baseline.py:CONFIGURATIONS` объединением списков из `features.py`.
+Feature sets for individual experiments are selected in
+`baseline.py:CONFIGURATIONS` by combining lists from `features.py`.
 
-### 2. Модели для обучения в `baseline.py`
+### 2. Models to train in `baseline.py`
 
-`MODELS` определяет, какие классификаторы обучаются на каждой конфигурации:
+`MODELS` determines which classifiers are trained on each configuration:
 
 ```python
 MODELS = {
@@ -113,108 +113,107 @@ MODELS = {
 }
 ```
 
-Чтобы включить модель, добавьте или раскомментируйте её запись; чтобы исключить
-из запуска — закомментируйте или уберите запись. В показанном варианте
-обучается только градиентный бустинг. Ключ используется в именах файлов
-метрик и предсказаний.
+To enable a model, add or uncomment its entry; to exclude it from the run,
+comment out or remove the entry. In the version shown, only gradient boosting
+is trained. The key is used in metrics and prediction filenames.
 
-Значение — функция, создающая новый классификатор. Параметры обучения меняются
-в `gradient_boosting()` и `logistic_regression()`: например, число итераций,
-скорость обучения, веса классов или регуляризация. Для новой модели добавьте
-такую функцию и запись в `MODELS`. Учитывайте поддерживаемый формат входа:
-сейчас преобразование разреженной матрицы в плотную в цикле обучения включено
-для ключа `hist_gradient_boosting`.
+The value is a function that creates a new classifier. Training parameters
+are changed in `gradient_boosting()` and `logistic_regression()`: for example,
+the number of iterations, learning rate, class weights, or regularization.
+For a new model, add such a function and an entry in `MODELS`. Consider the
+supported input format: currently, sparse-to-dense conversion in the training
+loop is enabled for the `hist_gradient_boosting` key.
 
-### 3. Масштабирование и обработка в `features.preprocess()`
+### 3. Scaling and processing in `features.preprocess()`
 
-`preprocess(feature_names)` задаёт правила обработки выбранных столбцов.
-Именно здесь меняются скейлеры, кодирование категорий и передача векторов:
+`preprocess(feature_names)` defines processing rules for the selected columns.
+This is where scalers, category encoding, and vector handling are changed:
 
-| Столбцы | Текущая обработка | Точка изменения |
+| Columns | Current processing | Where to change it |
 |---|---|---|
-| Обычные числа, `FORMATTING_NUM`, `TEXT_COMPARISON_*_NUM` и `TEXT_BM25_NUM` | `StandardScaler` | Переменная `scaler` и правило `("num", scaler, numeric)` |
-| Категории из `CONTENT_CAT` | `OneHotEncoder` | Правило `"cat"`: способ кодирования, порог редкости и неизвестные категории |
-| Координаты TF-IDF | Перевод разреженных столбцов pandas в scipy | Правило `"tfidf"` и функция `_tfidf_matrix()` |
-| Координаты SVD и E5 | Передача значений без изменения | Правило `"vectors"` с `"passthrough"` |
+| Ordinary numbers, `FORMATTING_NUM`, `TEXT_COMPARISON_*_NUM`, and `TEXT_BM25_NUM` | `StandardScaler` | The `scaler` variable and the `("num", scaler, numeric)` rule |
+| Categories from `CONTENT_CAT` | `OneHotEncoder` | The `"cat"` rule: encoding method, rarity threshold, and unknown categories |
+| TF-IDF coordinates | Conversion of sparse pandas columns to scipy | The `"tfidf"` rule and `_tfidf_matrix()` function |
+| SVD and E5 coordinates | Values passed through unchanged | The `"vectors"` rule with `"passthrough"` |
 
-Например, для изменения числового масштабирования замените `StandardScaler`
-на выбранный преобразователь и добавьте его импорт. Для изменения кодирования
-категорий отредактируйте блок `OneHotEncoder`. Для особой обработки отдельных
-числовых столбцов выделите им отдельное правило в `ColumnTransformer` и
-исключите их из общего списка `numeric`.
+For example, to change numeric scaling, replace `StandardScaler` with the
+chosen transformer and add its import. To change category encoding, edit the
+`OneHotEncoder` block. To process particular numeric columns separately, give
+them a separate rule in `ColumnTransformer` and exclude them from the general
+`numeric` list.
 
-Сейчас правила общие для всех конфигураций и моделей; изменение `preprocess()`
-влияет на все выбранные наборы с соответствующими столбцами. Сам вызов
-`preprocess()` создаёт преобразователь. Его параметры обучаются через
-`fit_transform(train)`; для test используется только `transform(test)`.
+The rules are currently shared across all configurations and models; changing
+`preprocess()` affects every selected set containing the corresponding columns.
+The `preprocess()` call itself creates a transformer. Its parameters are fitted
+through `fit_transform(train)`; only `transform(test)` is used for test.
 
-## Путь данных
+## Data flow
 
-1. `kairos/data.py` читает посты, авторов и готовые метки с разделением train/test.
-2. `kairos/label.py:author_level()` вычисляет уровень автора по предыдущим постам.
-3. `features.build(levelled, followers)` создаёт таблицу обычных признаков для
-   всех постов. Идентификаторы строки — `author` и `post`.
-4. `baseline.py` соединяет признаки с метками по этим идентификаторам и разделяет
-   таблицу по готовому столбцу `split`.
+1. `kairos/data.py` reads posts, authors, and existing labels with the train/test split.
+2. `kairos/label.py:author_level()` computes the author's level from earlier posts.
+3. `features.build(levelled, followers)` creates a table of ordinary features for
+   all posts. The row identifiers are `author` and `post`.
+4. `baseline.py` joins the features with labels on these identifiers and splits
+   the table using the existing `split` column.
 5. `features.prepare(train, test, feature_names, results_dir, history=levelled)`
-   добавляет текстовые векторы и сравнения с предыдущими постами. Вычисляются
-   только представления, необходимые выбранным конфигурациям. `history`
-   содержит полную историю, включая первые неразмеченные посты. Индексы и
-   порядок строк train/test сохраняются; соответствие истории определяется
-   по ключу `author`, `post`.
-6. `features.preprocess(feature_names)` создаёт преобразователь для выбранных
-   столбцов. В `baseline.py` он обучается через `fit_transform(train)`, а к test
-   применяется через `transform(test)`.
-7. На полученных матрицах обучаются классификаторы. Формат результатов задают
-   `baseline.py`, `kairos/metrics.py` и `evaluate.py`.
+   adds text vectors and comparisons with earlier posts. Only representations
+   needed by the selected configurations are computed. `history` contains the
+   full history, including the initial unlabelled posts. Train/test indices and
+   row order are preserved; history is matched by the `author`, `post` key.
+6. `features.preprocess(feature_names)` creates a transformer for the selected
+   columns. In `baseline.py`, it is fitted through `fit_transform(train)` and
+   applied to test through `transform(test)`.
+7. Classifiers are trained on the resulting matrices. The output format is
+   defined by `baseline.py`, `kairos/metrics.py`, and `evaluate.py`.
 
-## Группы — списки имён столбцов
+## Groups are lists of column names
 
-Группы задаются в `features.py` в одном стиле:
+Groups are defined consistently in `features.py`:
 
 ```python
 ESTIMATES_NUM = ["hist_mean", "hist_sample_var"]
 TEXT_SVD_NUM = [f"text_svd_{i:03d}" for i in range(SVD_COMPONENTS)]
 ```
 
-Каждое имя обозначает отдельный числовой или категориальный столбец таблицы.
-Вектор из 128 чисел занимает 128 столбцов. В ячейках таблицы не хранятся списки
-или массивы векторов.
+Each name denotes an individual numeric or categorical column in the table.
+A vector of 128 numbers occupies 128 columns. Table cells do not contain lists
+or arrays of vectors.
 
-| Константа | Содержимое | Подготовка к модели |
+| Constant | Contents | Model preparation |
 |---|---|---|
-| `CONTENT_NUM` | Длина, счётчики, время публикации | `StandardScaler` |
-| `CONTENT_CAT` | Тип поста | `OneHotEncoder` |
-| `HISTORY_NUM` | Уровень автора, разброс, ритм, подписчики | `StandardScaler` |
-| `ARTEFACT_NUM` | Возраст поста при сборе, размер истории | `StandardScaler` |
-| `ESTIMATES_NUM` | Среднее и выборочная дисперсия истории | `StandardScaler` |
-| `FORMATTING_NUM` | Эмодзи, пунктуация, регистр, абзацы, списки и отклонения от истории | `StandardScaler` |
-| `TEXT_TFIDF_NUM` | До 5000 координат TF-IDF | Без дополнительного масштабирования |
-| `TEXT_SVD_NUM` | До 128 координат нормализованного SVD | Без дополнительного масштабирования |
-| `TEXT_E5_NUM` | 384 координаты нормализованного E5 | Без дополнительного масштабирования |
-| `TEXT_COMPARISON_E5_NUM` | Три сравнения с историей на основе E5 | `StandardScaler` |
-| `TEXT_COMPARISON_TFIDF_NUM` | Три сравнения с историей на основе TF-IDF | `StandardScaler` |
-| `TEXT_BM25_NUM` | Девять оценок BM25-соседей по трём классам | `StandardScaler` |
+| `CONTENT_NUM` | Length, counts, posting time | `StandardScaler` |
+| `CONTENT_CAT` | Post type | `OneHotEncoder` |
+| `HISTORY_NUM` | Author's level, spread, rhythm, followers | `StandardScaler` |
+| `ARTEFACT_NUM` | Post age at collection, history size | `StandardScaler` |
+| `ESTIMATES_NUM` | History mean and sample variance | `StandardScaler` |
+| `FORMATTING_NUM` | Emoji, punctuation, letter case, paragraphs, lists, and deviations from history | `StandardScaler` |
+| `TEXT_TFIDF_NUM` | Up to 5000 TF-IDF coordinates | No additional scaling |
+| `TEXT_SVD_NUM` | Up to 128 normalized SVD coordinates | No additional scaling |
+| `TEXT_E5_NUM` | 384 normalized E5 coordinates | No additional scaling |
+| `TEXT_COMPARISON_E5_NUM` | Three history comparisons based on E5 | `StandardScaler` |
+| `TEXT_COMPARISON_TFIDF_NUM` | Three history comparisons based on TF-IDF | `StandardScaler` |
+| `TEXT_BM25_NUM` | Nine BM25 neighbor scores across three classes | `StandardScaler` |
 
-`TEXT_NUM` объединяет группы текстовых векторов и используется при выборе
-обработки. Суффикс `_NUM` означает числовые столбцы; правила масштабирования
-задаются в `preprocess()`. Скалярные группы `TEXT_COMPARISON_*_NUM` не входят
-в `TEXT_NUM` и обрабатываются как обычные числовые признаки. То же правило
-действует для `TEXT_BM25_NUM`.
+`TEXT_NUM` combines the text vector groups and is used to select processing.
+The `_NUM` suffix means numeric columns; scaling rules are defined in
+`preprocess()`. The scalar groups `TEXT_COMPARISON_*_NUM` are not part of
+`TEXT_NUM` and are processed as ordinary numeric features. The same rule applies
+to `TEXT_BM25_NUM`.
 
-Списки `TEXT_TFIDF_NUM` и `TEXT_SVD_NUM` содержат максимально возможные имена
-координат. `prepare()` создаёт только фактически полученные столбцы, без
-дополнения нулями. Число компонент SVD ограничено `SVD_COMPONENTS`, количеством
-TF-IDF признаков и обучающих постов. Для TF-IDF соответствие номера конкретному
-терму определяется словарём, обученным на train данного запуска.
+The `TEXT_TFIDF_NUM` and `TEXT_SVD_NUM` lists contain the maximum possible set of
+coordinate names. `prepare()` creates only the columns actually produced,
+without zero padding. The number of SVD components is limited by
+`SVD_COMPONENTS`, the number of TF-IDF features, and the number of training posts.
+For TF-IDF, the mapping from a coordinate number to a specific term is determined
+by the vocabulary fitted on train in that run.
 
-В `preprocess()` селекторы столбцов TF-IDF и SVD выбирают существующие координаты
-при обучении на train. При последующем `transform(test)` используются те же
-столбцы. Отсутствие обычных признаков или координат E5 остаётся ошибкой.
+In `preprocess()`, the TF-IDF and SVD column selectors select existing coordinates
+when fitted on train. The subsequent `transform(test)` uses the same columns.
+Missing ordinary features or E5 coordinates remain an error.
 
-## Конфигурации экспериментов
+## Experiment configurations
 
-Значение в `CONFIGURATIONS` — обычный список столбцов:
+A value in `CONFIGURATIONS` is an ordinary list of columns:
 
 ```python
 BASELINE = (
@@ -235,149 +234,150 @@ CONFIGURATIONS = {
 }
 ```
 
-Ключ используется в таблице метрик и имени файла предсказаний. В список входят
-все нужные столбцы, включая категории. Поэтому конфигурация только с
-`TEXT_SVD_NUM` получает только фактические текстовые координаты, не больше 128.
+The key is used in the metrics table and the prediction filename. The list
+contains all required columns, including categories. A configuration with only
+`TEXT_SVD_NUM` therefore receives only the actual text coordinates, at most 128.
 
-`baseline.py` передаёт объединение списков в `features.prepare()`, затем
-применяет один и тот же цикл обучения к каждой конфигурации. Добавление набора
-признаков не требует отдельной ветки обучения или склеивания матриц.
+`baseline.py` passes the union of the lists to `features.prepare()`, then applies
+the same training loop to each configuration. Adding a feature set does not
+require a separate training branch or matrix concatenation.
 
-## Как добавить признак
+## How to add a feature
 
-### Числовой признак отдельного поста или его истории
+### A numeric feature of an individual post or its history
 
-1. В `features.py` добавьте имя в подходящую группу или создайте новую:
+1. In `features.py`, add the name to a suitable group or create a new one:
    `MY_NUM = ["my_feature"]`.
-2. В `features.build()` вычислите `df["my_feature"]` для каждой строки.
-   Для истории используйте только посты, предшествующие текущему.
-3. В `baseline.py` добавьте конфигурацию
+2. In `features.build()`, compute `df["my_feature"]` for each row.
+   For history, use only posts that precede the current one.
+3. In `baseline.py`, add the configuration
    `"my_experiment": BASELINE + features.MY_NUM`.
 
-Новые обычные числовые столбцы автоматически проходят через `StandardScaler`.
+New ordinary numeric columns automatically pass through `StandardScaler`.
 
-### Категориальный признак
+### A categorical feature
 
-Вычислите столбец в `features.build()` и включите его имя в `CONTENT_CAT`.
-`preprocess()` применит `OneHotEncoder` только к категориям, явно выбранным
-конфигурацией. Неизвестные категории test обрабатываются через
+Compute the column in `features.build()` and include its name in `CONTENT_CAT`.
+`preprocess()` applies `OneHotEncoder` only to categories explicitly selected by
+the configuration. Unknown test categories are handled with
 `handle_unknown="ignore"`.
 
-### Признак, которому нужен обучающий корпус
+### A feature that needs a training corpus
 
-1. В `features.py` объявите список имён выходных координат.
-2. В `features.prepare()` определите, запрошена ли эта группа. Обучите
-   преобразование только на train, затем тем же экземпляром преобразуйте test.
-3. Добавьте результаты как отдельные столбцы с исходными индексами train/test.
-   Для разреженных векторов используйте `DataFrame.sparse.from_spmatrix()`.
-4. Если выход — готовый текстовый вектор, добавьте группу в `TEXT_NUM` и
-   соответствующий список в `preprocess()`, чтобы передавать координаты без
-   дополнительного масштабирования. Иные правила обработки также задавайте
-   в `features.py`.
-5. Добавьте конфигурацию через объединение списков столбцов в `baseline.py`.
+1. In `features.py`, declare the list of output coordinate names.
+2. In `features.prepare()`, determine whether this group was requested. Fit the
+   transformation only on train, then transform test with the same instance.
+3. Add the results as separate columns with the original train/test indices.
+   For sparse vectors, use `DataFrame.sparse.from_spmatrix()`.
+4. If the output is a ready-to-use text vector, add the group to `TEXT_NUM` and
+   the corresponding list to `preprocess()` to pass coordinates through without
+   additional scaling. Define other processing rules in `features.py` as well.
+5. Add a configuration by combining column lists in `baseline.py`.
 
-TF-IDF и SVD используют общий TF-IDF, обученный один раз на train. E5 использует
-зафиксированную предобученную модель и не обучается на корпусе. Пустым текстам
-E5 соответствует нулевой вектор. Загрузка модели и кэш эмбеддингов находятся
-в `features.py`; формат кэша включает тексты в их порядке, модель и её ревизию.
+TF-IDF and SVD share the same TF-IDF fitted once on train. E5 uses a pinned
+pretrained model and is not trained on the corpus. Empty texts receive a zero
+E5 vector. Model loading and the embedding cache are in `features.py`; the cache
+format includes the texts in order, the model, and its revision.
 
-## Форматирование текста
+## Text formatting
 
-Группа `FORMATTING_NUM` содержит 15 числовых признаков. Они вычисляются
-в `features.build()` через `_formatting()` для всех постов, включая первые
-неразмеченные. Для них не нужны обучаемый словарь, эмбеддинги или метки.
-Конфигурация `formatting` использует `BASELINE + features.FORMATTING_NUM`.
-Как остальные обычные числовые столбцы, они проходят `StandardScaler`.
+The `FORMATTING_NUM` group contains 15 numeric features. They are computed in
+`features.build()` through `_formatting()` for all posts, including the initial
+unlabelled ones. They require no fitted vocabulary, embeddings, or labels.
+The `formatting` configuration uses `BASELINE + features.FORMATTING_NUM`.
+Like other ordinary numeric columns, they pass through `StandardScaler`.
 
-| Блок | Столбцы | Правило |
+| Group | Columns | Rule |
 |---|---|---|
-| Эмодзи | `n_emoji`, `n_unique_emoji`, `emoji_at_start` | Число эмодзи, число разных последовательностей и наличие эмодзи в начале после пропуска ведущих пробельных символов |
-| Пунктуация | `n_exclamations`, `n_questions`, `n_repeated_punct` | Число `!`, число `?`, число непрерывных серий `[!?]{2,}`; `!!!??` — одна серия |
-| Регистр | `uppercase_ratio`, `n_uppercase_words` | Доля заглавных среди букв с регистром; число слов с минимум двумя буквами, у которых все буквы с регистром заглавные |
-| Абзацы | `n_paragraphs`, `first_paragraph_length`, `max_paragraph_length` | Непустые абзацы разделяются пустыми строками; длины считаются через `len()` после удаления пробелов по краям абзаца |
-| Списки | `n_list_items` | Число строк, начинающихся после отступа с маркера или номера, пробела и непустого содержания |
-| История | `emoji_vs_history`, `uppercase_vs_history`, `paragraphs_vs_history` | Текущее `n_emoji`, `uppercase_ratio`, `n_paragraphs` минус соответствующее среднее по последним 20 строго предыдущим постам автора |
+| Emoji | `n_emoji`, `n_unique_emoji`, `emoji_at_start` | Number of emoji, number of distinct sequences, and presence of an emoji at the start after skipping leading whitespace |
+| Punctuation | `n_exclamations`, `n_questions`, `n_repeated_punct` | Number of `!`, number of `?`, number of continuous `[!?]{2,}` sequences; `!!!??` is one sequence |
+| Letter case | `uppercase_ratio`, `n_uppercase_words` | Uppercase fraction among cased letters; number of words with at least two letters whose cased letters are all uppercase |
+| Paragraphs | `n_paragraphs`, `first_paragraph_length`, `max_paragraph_length` | Nonempty paragraphs are separated by blank lines; lengths are computed with `len()` after stripping whitespace from paragraph boundaries |
+| Lists | `n_list_items` | Number of lines that begin, after indentation, with a bullet or number, whitespace, and nonempty content |
+| History | `emoji_vs_history`, `uppercase_vs_history`, `paragraphs_vs_history` | Current `n_emoji`, `uppercase_ratio`, `n_paragraphs` minus the corresponding mean over the author's last 20 strictly earlier posts |
 
-Составные эмодзи считаются по Unicode-графемам: эмодзи с оттенком кожи,
-последовательность с ZWJ, флаг и клавишный эмодзи вроде `1️⃣` дают по одному
-элементу. Уникальность определяется по полной последовательности символов.
-Обычные цифры и символы `#`, `*` без клавишного оформления не считаются эмодзи.
-Для Unicode-свойств и графем используется зависимость `regex`, явно указанная
-в `requirements.txt`.
+Compound emoji are counted using Unicode graphemes: an emoji with a skin tone,
+a ZWJ sequence, a flag, and a keycap emoji such as `1️⃣` each count as one item.
+Uniqueness is determined by the full character sequence. Ordinary digits and
+`#`, `*` characters without keycap formatting are not counted as emoji.
+Unicode properties and graphemes use the `regex` dependency, explicitly listed
+in `requirements.txt`.
 
-В `uppercase_ratio` цифры, пунктуация и буквы без регистра не входят в
-знаменатель. Если букв с регистром нет, результат равен нулю. Длина заглавного
-слова проверяется по числу букв, а не по числу кодовых точек: одна буква
-с комбинируемым ударением не становится словом из двух букв.
+In `uppercase_ratio`, digits, punctuation, and uncased letters do not enter the
+denominator. If there are no cased letters, the result is zero. Uppercase word
+length is checked by letter count, not code point count: a single letter with a
+combining accent does not become a two-letter word.
 
-Перед анализом CRLF и CR приводятся к LF. Одиночный перенос строки остаётся
-внутри абзаца и учитывается в его длине. Пустая строка может содержать пробелы
-или табуляцию. У пустого текста число абзацев и обе длины равны нулю.
-Поддерживаются маркеры `-`, `*`, `+`, обычные Unicode-маркеры, тире и галочки,
-а также номера `1.`, `1)`, `(1)` и составная нумерация вроде `1.2.`.
-После маркера требуется пробельный символ и содержание; горизонтальные
-разделители вроде `---` и `***` не считаются пунктами.
+Before analysis, CRLF and CR are converted to LF. A single line break remains
+inside the paragraph and counts towards its length. A blank line may contain
+spaces or tabs. For empty text, the paragraph count and both lengths are zero.
+Supported bullets include `-`, `*`, `+`, common Unicode bullets, dashes, and check
+marks, as well as numbers such as `1.`, `1)`, `(1)`, and compound numbering such
+as `1.2.`. A marker must be followed by whitespace and content; horizontal
+separators such as `---` and `***` are not counted as items.
 
-Окно истории задаёт отдельная константа `FORMATTING_HISTORY = 20`, положительное
-целое число. При недостатке истории используются доступные посты. При
-отсутствии истории все три отклонения равны нулю. Посты с одинаковым
-`posted_at` не входят в историю друг друга. Пост без даты сохраняет текущие
-признаки оформления, но его отклонения равны нулю, и он не входит в историю
-других постов. Сохраняются исходные индексы и порядок строк таблицы.
+The history window is controlled by a separate constant,
+`FORMATTING_HISTORY = 20`, a positive integer. If history is insufficient,
+available posts are used. With no history, all three deviations are zero.
+Posts with the same `posted_at` do not enter each other's history. A post without
+a date retains its current formatting features, but its deviations are zero
+and it does not enter other posts' history. Original table indices and row order
+are preserved.
 
-## Сравнение с историей автора
+## Comparison with the author's history
 
-Группы `TEXT_COMPARISON_E5_NUM` и `TEXT_COMPARISON_TFIDF_NUM` содержат по три
-столбца с суффиксом соответствующего представления:
+The groups `TEXT_COMPARISON_E5_NUM` and `TEXT_COMPARISON_TFIDF_NUM` each contain
+three columns with the suffix of the corresponding representation:
 
-- `similarity_all_e5` / `similarity_all_tfidf`: косинусное сходство текущего
-  вектора со средним вектором всех предыдущих постов автора.
-- `similarity_last_5_e5` / `similarity_last_5_tfidf`: сходство со средним вектором
-  последних пяти предыдущих постов.
-- `last_nearest_resid_e5` / `last_nearest_resid_tfidf`: сумма
-  `cosine(current, previous) * previous.resid` по наиболее похожим кандидатам.
+- `similarity_all_e5` / `similarity_all_tfidf`: cosine similarity of the current
+  vector to the mean vector of all the author's earlier posts.
+- `similarity_last_5_e5` / `similarity_last_5_tfidf`: similarity to the mean vector
+  of the last five earlier posts.
+- `last_nearest_resid_e5` / `last_nearest_resid_tfidf`: sum of
+  `cosine(current, previous) * previous.resid` over the most similar candidates.
 
-Косинус вычисляется как `(a · b) / (||a|| * ||b||)`. Для первых двух признаков
-сначала усредняются векторы истории, затем считается косинус со средним;
-среднее отдельных косинусов здесь не используется.
+Cosine is computed as `(a · b) / (||a|| * ||b||)`. For the first two features,
+history vectors are averaged first, then cosine similarity to the mean is
+computed; the mean of individual cosine similarities is not used here.
 
-Параметры в `features.py`: `N_LAST = 20`, `N_NEAREST = 5`. Это начальные настройки
-эксперимента. Допустимы натуральные числа с условием
-`1 <= N_NEAREST <= N_LAST`. Для третьего признака сначала берутся последние
-`N_LAST` постов, из них исключаются посты с отсутствующим или бесконечным
-`resid`, затем выбираются максимум `N_NEAREST` кандидатов по убыванию косинуса.
-При равном косинусе предпочтение отдаётся более свежему кандидату; при равных
-датах приоритет у более поздней строки исходной истории. Более старые посты
-не заменяют исключённых кандидатов за пределами окна `N_LAST`.
+Parameters in `features.py`: `N_LAST = 20`, `N_NEAREST = 5`. These are the initial
+experiment settings. Positive integers satisfying `1 <= N_NEAREST <= N_LAST`
+are allowed. For the third feature, the last `N_LAST` posts are taken first,
+posts with missing or infinite `resid` are excluded, and then up to `N_NEAREST`
+candidates are selected in descending cosine order. Ties prefer the more recent
+candidate; equal dates prefer the later row in the original history. Older
+posts outside the `N_LAST` window do not replace excluded candidates.
 
-История ограничена тем же автором и строго более ранними `posted_at`.
-Посты с одинаковой датой обрабатываются одной группой и не входят в историю
-друг друга. Посты без даты не используются в истории, их сравнения равны нулю.
-Первые неразмеченные посты участвуют в средних векторах, хотя их `resid`
-ещё отсутствует. Если истории мало, используются доступные посты. При нулевом
-векторе косинус считается равным нулю; при отсутствии кандидатов сумма равна
-нулю. Отрицательные косинусы сохраняются. Сумма не нормируется на сумму весов.
+History is restricted to the same author and strictly earlier `posted_at`.
+Posts with the same date are processed as one group and do not enter each
+other's history. Posts without dates are not used in history, and their
+comparisons are zero. Initial unlabelled posts contribute to the mean vectors,
+even though their `resid` is still missing. If history is short, available posts
+are used. Cosine is zero for a zero vector; the sum is zero if there are no
+candidates. Negative cosines are preserved. The sum is not normalized by the
+sum of weights.
 
-`history=levelled` обязателен только для групп сравнения; для прежних групп
-вызов `prepare()` без этого аргумента остаётся допустимым. В истории должны
-присутствовать все запрошенные train/test посты, а ключи `author`, `post`
-должны быть уникальными. В расчёт входят только авторы из train/test.
+`history=levelled` is required only for comparison groups; calling `prepare()`
+without this argument remains valid for the previous groups. History must
+contain all requested train/test posts, and the `author`, `post` keys must be
+unique. Only authors from train/test enter the calculation.
 
-Словарь и IDF по-прежнему обучаются только на размеченных текстах train.
-Тем же преобразователем кодируется история участвующих авторов, включая test.
-E5 кодирует эту историю одним вызовом; полученные векторы переиспользуются
-и для координат, и для сравнений. Без групп сравнения сохраняется прежний
-порядок кодирования `train_text + test_text` и совместимость с его кэшем.
-Расчёт сравнений не требует SVD или добавления исходных координат в таблицу.
+The vocabulary and IDF are still fitted only on labelled train texts. The same
+transformer encodes the participating authors' history, including test authors.
+E5 encodes this history in one call; the resulting vectors are reused for both
+coordinates and comparisons. Without comparison groups, the previous encoding
+order, `train_text + test_text`, and compatibility with its cache are preserved.
+Computing comparisons does not require SVD or adding the original coordinates
+to the table.
 
-`_text_comparison()` использует накопленную сумму векторов для всей истории
-и небольшие окна для последних постов. Полная матрица попарного сходства
-всех постов не строится. TF-IDF сохраняет разреженное хранение.
+`_text_comparison()` uses a cumulative vector sum for the entire history and
+small windows for recent posts. A full pairwise similarity matrix of all posts
+is not built. TF-IDF retains sparse storage.
 
-## BM25: оценки соседей по классам
+## BM25: neighbor scores by class
 
-Группа `TEXT_BM25_NUM` добавляет девять числовых столбцов. Для каждого из
-`below`, `typical`, `above` вычисляются:
+The `TEXT_BM25_NUM` group adds nine numeric columns. For each of `below`,
+`typical`, and `above`, the following are computed:
 
 ```python
 number_close_bm25_classname = len(neighbors_c)
@@ -385,94 +385,96 @@ norm_sum_bm25_classname = sum(p.bm25_score for p in neighbors_c)
 resid_sum_bm25_classname = sum(p.bm25_score * p.resid for p in neighbors_c)
 ```
 
-`norm_sum` — название признака; по заданной формуле это обычная сумма оценок
-BM25, без деления на число соседей или на сумму всех оценок. Порядок столбцов:
-три оценки для `below`, затем три для `typical`, затем три для `above`.
-Соответствие номеров классов берётся из `kairos.label.CLASS_NAMES`.
+`norm_sum` is the feature name; by the specified formula, it is an ordinary sum
+of BM25 scores, without division by the number of neighbors or the sum of all
+scores. Column order: three scores for `below`, then three for `typical`, then
+three for `above`. The class number mapping comes from `kairos.label.CLASS_NAMES`.
 
-Конфигурация `text_bm25` содержит `BASELINE + features.TEXT_BM25_NUM`.
-В `prepare()` для неё вызывается `_text_bm25(history, train_rows)`. Девять
-результатов сопоставляются с train/test по существующим ключам `author`,
-`post`. Они проходят обычный `StandardScaler` в `preprocess()` и не входят
-в `TEXT_NUM`. Новых веток обучения, внешних библиотек или моделей не требуется.
+The `text_bm25` configuration contains `BASELINE + features.TEXT_BM25_NUM`.
+In `prepare()`, it calls `_text_bm25(history, train_rows)`. The nine results are
+matched to train/test using the existing `author`, `post` keys. They pass through
+the ordinary `StandardScaler` in `preprocess()` and are not part of `TEXT_NUM`.
+No new training branches, external libraries, or models are required.
 
-Запрос BM25 — текст текущего поста. Кандидаты — последние `N_LAST = 20`
-строго предыдущих постов того же автора. Внутри этого окна исключаются посты
-без конечного `resid`, затем выбираются до `BM25_TOP_N = 12` соседей с
-наибольшим положительным BM25. Это общий top-12, который затем разделяется
-по классам. Нулевые совпадения не увеличивают `number_close`. При равных
-оценках предпочтение отдаётся более свежему посту; при равных датах — более
-поздней строке исходной истории. Текущий пост, будущие посты и посты с той же
-датой не входят в его кандидаты. Посты без даты дают нулевые признаки.
+The BM25 query is the current post's text. Candidates are the last `N_LAST = 20`
+strictly earlier posts by the same author. Within this window, posts without a
+finite `resid` are excluded, then up to `BM25_TOP_N = 12` neighbors with the
+highest positive BM25 are selected. This is a shared top 12, which is then split
+by class. Zero matches do not increase `number_close`. Ties prefer the more recent
+post; equal dates prefer the later row in the original history. The current
+post, future posts, and posts with the same date do not enter its candidates.
+Posts without dates produce zero features.
 
-Класс соседа определяется по его `resid` через существующие `fit_cutoffs()`
-и `classify()`. Пороги вычисляются только по остаткам размеченных train-постов.
-Метки и остатки текущих или будущих test-постов не участвуют в расчёте его
-признаков. Если в классе нет подходящих соседей, все три его оценки равны нулю.
+A neighbor's class is determined from its `resid` through the existing
+`fit_cutoffs()` and `classify()`. Cutoffs are computed only from labelled train
+post residuals. Labels and residuals of current or future test posts do not
+enter the calculation of its features. If a class has no suitable neighbors,
+all three of its scores are zero.
 
-BM25 использует отдельный `CountVectorizer` с обычными словами в нижнем
-регистре, стандартным шаблоном токенов длиной от двух символов, без стемминга
-и удаления стоп-слов. Словарь, документные частоты и средняя длина документа
-определяются по текстам train. Словарь BM25 не ограничен
-`TFIDF_MAX_FEATURES`; TF-IDF, SVD и E5 для этих девяти признаков не вычисляются.
+BM25 uses a separate `CountVectorizer` with ordinary lowercase words and the
+standard token pattern of at least two characters, without stemming or stop-word
+removal. Vocabulary, document frequencies, and average document length are
+determined from train texts. The BM25 vocabulary is not limited by
+`TFIDF_MAX_FEATURES`; TF-IDF, SVD, and E5 are not computed for these nine features.
 
-Для термина запроса `t` и исторического документа `d` используются формулы:
+For query term `t` and historical document `d`, the formulas are:
 
 ```text
 idf(t) = log(1 + (N - df(t) + 0.5) / (df(t) + 0.5))
 
-BM25(q, d) = sum по различным терминам t из q:
+BM25(q, d) = sum over distinct terms t in q:
     idf(t) * tf(t,d) * (k1 + 1)
     / (tf(t,d) + k1 * (1 - b + b * dl(d) / avgdl))
 ```
 
-Здесь `N` — число train-документов, `df` — число train-документов с термином,
-`tf` — число его вхождений в документе, `dl` — длина документа, `avgdl` —
-средняя длина train-документа. Длина учитывает все токены, включая отсутствующие
-в train-словаре. Повторение слова в запросе не добавляет отдельного множителя.
-Параметры по умолчанию: `BM25_K1 = 1.5`, `BM25_B = 0.75`. Пустой запрос,
-отсутствие совпадений или пустой train-словарь дают нулевые оценки.
+Here, `N` is the number of train documents, `df` is the number of train documents
+containing the term, `tf` is its occurrence count in the document, `dl` is the
+document length, and `avgdl` is the mean train document length. Length includes
+all tokens, including those absent from the train vocabulary. Repeated words
+in the query do not add a separate multiplier. Defaults: `BM25_K1 = 1.5`,
+`BM25_B = 0.75`. An empty query, no matches, or an empty train vocabulary yields
+zero scores.
 
-Матрицы частот и весов BM25 хранятся разреженно. Плотно вычисляются только
-оценки текущих постов относительно небольшого окна кандидатов; полной матрицы
-попарного сходства всех постов нет.
+BM25 frequency and weight matrices are stored sparsely. Only scores of current
+posts against a small candidate window are computed densely; there is no full
+pairwise similarity matrix of all posts.
 
-## Правила проверки
+## Validation rules
 
-- Не используйте метки test для обучения преобразований. В исторических
-  сравнениях разрешён `resid` предыдущих постов того же автора, включая test
-  авторов; `resid` текущего и будущих постов не входит в признаки.
-- Словарь TF-IDF, IDF, SVD, масштабирование и кодирование категорий обучайте только
-  на train. Все исторические признаки вычисляйте до добавления текущего поста
-  в историю автора.
-- Сохраняйте соответствие признаков исходным `author`/`post` и индексам таблицы.
-  После разделения train/test индексы могут быть непоследовательными.
-- Сохраняйте разреженный TF-IDF при подготовке данных и обучении логистической
-  регрессии. В `baseline.py` разреженная матрица преобразуется в плотную для
-  `HistGradientBoostingClassifier`, которому требуется такой вход.
-- При изменении модели эмбеддингов, её ревизии или способа кодирования обновите
-  ключ кэша; при изменении размерности обновите список имён столбцов.
-- Проверяйте размерности, порядок строк, обработку неизвестных слов и категорий,
-  отсутствие незапрошенных признаков и возможность обучить обе модели.
-- После добавления нового эксперимента обновляйте описание в обоих README.
+- Do not use test labels to fit transformations. Historical comparisons may
+  use `resid` from earlier posts by the same author, including test authors;
+  `resid` of the current or future posts does not enter the features.
+- Fit the TF-IDF vocabulary, IDF, SVD, scaling, and category encoding only on
+  train. Compute all historical features before adding the current post to
+  the author's history.
+- Preserve feature correspondence to the original `author`/`post` and table
+  indices. Indices may be nonconsecutive after the train/test split.
+- Keep TF-IDF sparse during data preparation and logistic regression training.
+  In `baseline.py`, the sparse matrix is converted to dense for
+  `HistGradientBoostingClassifier`, which requires this input.
+- When changing the embedding model, its revision, or encoding method, update
+  the cache key; when changing dimensionality, update the column name list.
+- Check dimensions, row order, handling of unknown words and categories,
+  absence of unrequested features, and the ability to train both models.
+- After adding a new experiment, update its description in README.
 
-Только по явному запросу пользователя проверки контрактов подготовки признаков
-можно запустить из корня репозитория:
+Only at the user's explicit request, feature preparation contract checks can
+be run from the repository root:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Они проверяют обучение TF-IDF только на train, соответствие строк, выбор
-только текстовых столбцов, разреженность и совместимость с обоими
-классификаторами. Маленький корпус проверяется без искусственного дополнения
-координат нулями. В тесте порядка координат E5 используется заглушка энкодера;
-скачивать модель для этих проверок не требуется.
-Сценарии сравнений дополнительно проверяют формулы, окна истории, равные и
-отсутствующие даты, отрицательные косинусы, остатки и соответствие строк.
-Сценарии BM25 проверяют раздельные оценки классов при одинаковой общей сумме
-остатков, формулу BM25, top-12, исключение нулевых совпадений, временные границы
-и отдельный запуск только BM25-признаков без вычисления эмбеддингов.
-Сценарии форматирования проверяют составные эмодзи, Unicode-регистр,
-пунктуацию, абзацы и списки, пустые тексты, сохранение индексов и окно из 20
-строго предыдущих постов без влияния будущих постов и других авторов.
+They check that TF-IDF is fitted only on train, row correspondence, selection
+of text columns only, sparsity, and compatibility with both classifiers.
+The small corpus is checked without artificial zero padding of coordinates.
+The E5 coordinate order test uses an encoder stub; downloading the model is
+not required for these checks.
+Comparison scenarios additionally check formulas, history windows, equal and
+missing dates, negative cosines, residuals, and row correspondence.
+BM25 scenarios check separate class scores with the same overall residual sum,
+the BM25 formula, top 12, exclusion of zero matches, temporal boundaries, and
+running only BM25 features without computing embeddings.
+Formatting scenarios check compound emoji, Unicode letter case, punctuation,
+paragraphs and lists, empty texts, preservation of indices, and a window of 20
+strictly earlier posts without influence from future posts or other authors.

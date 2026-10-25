@@ -45,33 +45,51 @@ BASELINE = (
     + features.ARTEFACT_NUM
     + features.CONTENT_CAT
 )
-CONFIGURATIONS = {
-    "baseline": BASELINE,
-    "estimates": BASELINE + features.ESTIMATES_NUM,
-    "formatting": BASELINE + features.FORMATTING_NUM,
-    "text_bm25": BASELINE + features.TEXT_COMPARISON_BM25_NUM,
-    # "text_tf_idf": BASELINE + features.TEXT_TFIDF_NUM,
-    # "text_tf_idf_truncatedsvd": BASELINE + features.TEXT_SVD_NUM,
-    # "text_only_tf_idf_truncatedsvd": features.TEXT_SVD_NUM,
-    # "text_multilingual_e5_small": BASELINE + features.TEXT_E5_NUM,
-    "text_tfidfsvd_e5": BASELINE + features.TEXT_SVD_NUM + features.TEXT_E5_NUM,
-    "comparison_tfidf": BASELINE + features.TEXT_COMPARISON_TFIDF_NUM,
-    "comparison_e5": BASELINE + features.TEXT_COMPARISON_E5_NUM,
-    "comparison_bm25": BASELINE + features.TEXT_COMPARISON_BM25_NUM,
-    "comparison_tfidf_e5": BASELINE
-    + features.TEXT_COMPARISON_TFIDF_NUM
-    + features.TEXT_COMPARISON_E5_NUM,
-    "text_comparison": BASELINE
-    + features.TEXT_E5_NUM
-    + features.TEXT_COMPARISON_TFIDF_NUM
-    + features.TEXT_COMPARISON_E5_NUM
-    + features.TEXT_COMPARISON_BM25_NUM,
-    "text_comparison_estimates": BASELINE
+
+SUCCESS = (
+    BASELINE
     + features.TEXT_COMPARISON_TFIDF_NUM
     + features.TEXT_COMPARISON_E5_NUM
     + features.TEXT_COMPARISON_BM25_NUM
     + features.TEXT_E5_NUM
+    + features.ESTIMATES_NUM
+)
+
+CONFIGURATIONS = {
+    # "baseline": BASELINE,
+    # "estimates": BASELINE + features.ESTIMATES_NUM,
+    # "formatting": BASELINE + features.FORMATTING_NUM,
+    # "text_bm25": BASELINE + features.TEXT_COMPARISON_BM25_NUM,
+    # "text_tf_idf": BASELINE + features.TEXT_TFIDF_NUM,
+    # "text_tf_idf_truncatedsvd": BASELINE + features.TEXT_SVD_NUM,
+    # "text_only_tf_idf_truncatedsvd": features.TEXT_SVD_NUM,
+    # "text_multilingual_e5_small": BASELINE + features.TEXT_E5_NUM,
+    # "text_tfidfsvd_e5": BASELINE + features.TEXT_SVD_NUM + features.TEXT_E5_NUM,
+    # "comparison_tfidf": BASELINE + features.TEXT_COMPARISON_TFIDF_NUM,
+    # "comparison_e5": BASELINE + features.TEXT_COMPARISON_E5_NUM,
+    # "comparison_bm25": BASELINE + features.TEXT_COMPARISON_BM25_NUM,
+    # "comparison_tfidf_e5": BASELINE
+    # + features.TEXT_COMPARISON_TFIDF_NUM
+    # + features.TEXT_COMPARISON_E5_NUM,
+    # "text_comparison": BASELINE
+    # + features.TEXT_E5_NUM
+    # + features.TEXT_COMPARISON_TFIDF_NUM
+    # + features.TEXT_COMPARISON_E5_NUM
+    # + features.TEXT_COMPARISON_BM25_NUM,
+    # "text_comparison_estimates": SUCCESS,
+    # "success_formatting": SUCCESS + features.FORMATTING_NUM,
+    "except_text": BASELINE
+    + features.TEXT_COMPARISON_TFIDF_NUM
+    + features.TEXT_COMPARISON_BM25_NUM
+    + features.TEXT_COMPARISON_E5_NUM
+    + features.FORMATTING_NUM
     + features.ESTIMATES_NUM,
+    "except_text_another_order": features.ESTIMATES_NUM
+    + features.TEXT_COMPARISON_BM25_NUM
+    + BASELINE
+    + features.TEXT_COMPARISON_TFIDF_NUM
+    + features.FORMATTING_NUM
+    + features.TEXT_COMPARISON_E5_NUM,
 }
 
 
