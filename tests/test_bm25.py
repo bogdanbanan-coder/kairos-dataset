@@ -170,19 +170,19 @@ class BM25FeaturesTests(unittest.TestCase):
             with patch.object(features, "_e5_embeddings", side_effect=AssertionError):
                 with patch.object(features, "TfidfVectorizer", side_effect=AssertionError):
                     prepared_train, prepared_test = features.prepare(
-                        train, test, features.TEXT_BM25_NUM, Path(directory), history=history
+                        train, test, features.TEXT_COMPARISON_BM25_NUM, Path(directory), history=history
                     )
         self.assertEqual(
-            set(prepared_test.columns) - set(test.columns), set(features.TEXT_BM25_NUM)
+            set(prepared_test.columns) - set(test.columns), set(features.TEXT_COMPARISON_BM25_NUM)
         )
         pd.testing.assert_index_equal(prepared_train.index, train.index)
         pd.testing.assert_index_equal(prepared_test.index, test.index)
         np.testing.assert_allclose(
-            prepared_test[features.TEXT_BM25_NUM],
+            prepared_test[features.TEXT_COMPARISON_BM25_NUM],
             [[1, self.score, -self.score, 1, self.score, 0, 1, self.score, self.score]],
             atol=1e-6,
         )
-        transformer = features.preprocess(features.TEXT_BM25_NUM)
+        transformer = features.preprocess(features.TEXT_COMPARISON_BM25_NUM)
         self.assertEqual(transformer.fit_transform(prepared_train).shape, (len(train), 9))
         self.assertEqual(transformer.transform(prepared_test).shape, (len(test), 9))
         self.assertEqual(set(transformer.named_transformers_) - {"remainder"}, {"num"})

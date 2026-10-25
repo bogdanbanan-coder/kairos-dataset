@@ -69,7 +69,10 @@ def load_posts(data_dir: Path | str = DATA_DIR, own_only: bool = True) -> pd.Dat
             )
     df = pd.DataFrame(rows)
     df["posted_at"] = pd.to_datetime(df["posted_at"], unit="ms", utc=True)
-    df["crawled_at"] = pd.to_datetime(df["crawled_at"], utc=True, errors="coerce")
+    # The release mixes ISO timestamps with and without fractional seconds.
+    df["crawled_at"] = pd.to_datetime(
+        df["crawled_at"], format="ISO8601", utc=True, errors="coerce"
+    )
     return df
 
 

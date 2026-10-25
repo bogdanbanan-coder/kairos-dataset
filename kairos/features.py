@@ -6,6 +6,7 @@ artefact   how it was collected: the post's age at crawl and its place in the
            author's run
 text       TF-IDF, normalized SVD, and multilingual E5 vectors
 comparison cosine similarity and BM25 class statistics from earlier author posts
+formatting emoji, punctuation, case, paragraphs, lists and changes in author style
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import regex
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
@@ -35,6 +37,21 @@ from kairos.label import CLASS_NAMES, MIN_HISTORY, classify, fit_cutoffs
 _URL = re.compile(r"https?://|⟨URL⟩")
 _MENTION = re.compile(r"@\w+|⟨HANDLE⟩|⟨(?:PERSON|AUTHOR)[^⟩]*⟩")
 _HASHTAG = re.compile(r"#(?:\w+|⟨[^⟩]*⟩)")
+
+# Match whole graphemes so flags, skin tones and ZWJ emoji count as one item.
+_EMOJI_GRAPHEME = regex.compile(
+    r"(?=[\p{Extended_Pictographic}\p{Regional_Indicator}#*0-9])\X"
+)
+_EMOJI_CONTENT = regex.compile(
+    r"\p{Extended_Pictographic}|\p{Regional_Indicator}{2}|[#*0-9]\ufe0f?\u20e3"
+)
+_FORMATTING_WORD = regex.compile(r"[\p{L}\p{N}_][\p{L}\p{M}\p{N}_]*")
+_REPEATED_PUNCT = re.compile(r"[!?]{2,}")
+_PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
+_LIST_ITEM = re.compile(
+    r"^[^\S\n]*(?:[-*+•●◦▪▫‣⁃–—✓✔☑✅]\ufe0f?|\d+(?:\.\d+)*[.)]|\(\d+\))" r"[^\S\n]+\S",
+    re.MULTILINE,
+)
 
 CONTENT_NUM = [
     "n_chars",
@@ -60,6 +77,25 @@ ARTEFACT_NUM = ["age_days", "hist_n"]
 # history
 ESTIMATES_NUM = ["hist_mean", "hist_sample_var"]
 
+FORMATTING_HISTORY = 20
+FORMATTING_NUM = [
+    "n_emoji",
+    "n_unique_emoji",
+    "emoji_at_start",
+    "n_exclamations",
+    "n_questions",
+    "n_repeated_punct",
+    "uppercase_ratio",
+    "n_uppercase_words",
+    "n_paragraphs",
+    "first_paragraph_length",
+    "max_paragraph_length",
+    "n_list_items",
+    "emoji_vs_history",
+    "uppercase_vs_history",
+    "paragraphs_vs_history",
+]
+
 N_LAST = 20
 N_NEAREST = 5
 TEXT_COMPARISON_E5_NUM = [
@@ -76,7 +112,7 @@ TEXT_COMPARISON_TFIDF_NUM = [
 BM25_TOP_N = 12
 BM25_K1 = 1.5
 BM25_B = 0.75
-TEXT_BM25_NUM = [
+TEXT_COMPARISON_BM25_NUM = [
     f"{stat}_bm25_{class_name}"
     for class_name in CLASS_NAMES.values()
     for stat in ("number_close", "norm_sum", "resid_sum")
@@ -94,6 +130,83 @@ TEXT_SVD_NUM = [f"text_svd_{i:03d}" for i in range(SVD_COMPONENTS)]
 TEXT_E5_NUM = [f"text_e5_{i:03d}" for i in range(E5_DIMENSIONS)]
 TEXT_NUM = TEXT_TFIDF_NUM + TEXT_SVD_NUM + TEXT_E5_NUM
 
+
+def _formatting_values(text: str) -> dict[str, int | float]:
+    """Measure one post's visible formatting; CRLF and CR use LF line endings."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    emojis = [
+        match
+        for match in _EMOJI_GRAPHEME.finditer(text)
+        if _EMOJI_CONTENT.search(match.group())
+    ]
+    cased_letters = [
+        char for char in text if char.isalpha() and char.lower() != char.upper()
+    ]
+    words = _FORMATTING_WORD.findall(text)
+    paragraphs = [
+        paragraph.strip()
+        for paragraph in _PARAGRAPH_BREAK.split(text.strip())
+        if paragraph.strip()
+    ]
+    paragraph_lengths = [len(paragraph) for paragraph in paragraphs]
+    return {
+        "n_emoji": len(emojis),
+        "n_unique_emoji": len({match.group() for match in emojis}),
+        "emoji_at_start": int(
+            bool(emojis) and emojis[0].start() == len(text) - len(text.lstrip())
+        ),
+        "n_exclamations": text.count("!"),
+        "n_questions": text.count("?"),
+        "n_repeated_punct": len(_REPEATED_PUNCT.findall(text)),
+        "uppercase_ratio": (
+            sum(char.isupper() for char in cased_letters) / len(cased_letters)
+            if cased_letters
+            else 0.0
+        ),
+        "n_uppercase_words": sum(
+            word.isupper() and sum(char.isalpha() for char in word) >= 2
+            for word in words
+        ),
+        "n_paragraphs": len(paragraphs),
+        "first_paragraph_length": paragraph_lengths[0] if paragraph_lengths else 0,
+        "max_paragraph_length": max(paragraph_lengths, default=0),
+        "n_list_items": len(_LIST_ITEM.findall(text)),
+    }
+
+
+def _formatting(levelled: pd.DataFrame) -> pd.DataFrame:
+    """Add formatting counts and differences from the last strictly earlier posts."""
+    if type(FORMATTING_HISTORY) is not int or FORMATTING_HISTORY < 1:
+        raise ValueError("FORMATTING_HISTORY must be a positive integer")
+    result = pd.DataFrame(
+        [_formatting_values(text) for text in levelled["text"].fillna("")],
+        index=levelled.index,
+        columns=FORMATTING_NUM[:-3],
+    )
+    values = result[["n_emoji", "uppercase_ratio", "n_paragraphs"]].to_numpy(
+        dtype=np.float64
+    )
+    deviations = np.zeros((len(levelled), 3), dtype=np.float64)
+    metadata = levelled[["author", "posted_at"]].reset_index(drop=True)
+    for _, posts in metadata.groupby("author", sort=False):
+        posts = posts.dropna(subset=["posted_at"]).sort_values(
+            "posted_at", kind="mergesort"
+        )
+        positions = posts.index.to_numpy()
+        author_values = values[positions]
+        start = 0
+        for _, simultaneous in posts.groupby("posted_at", sort=False):
+            end = start + len(simultaneous)
+            if start:
+                previous_mean = author_values[
+                    max(0, start - FORMATTING_HISTORY) : start
+                ].mean(axis=0)
+                deviations[positions[start:end]] = (
+                    author_values[start:end] - previous_mean
+                )
+            start = end
+    result[FORMATTING_NUM[-3:]] = deviations
+    return result
 
 
 def build(levelled: pd.DataFrame, followers: pd.Series) -> pd.DataFrame:
@@ -168,7 +281,7 @@ def build(levelled: pd.DataFrame, followers: pd.Series) -> pd.DataFrame:
             history.append(author_post.log_reactions)
             previous_posted_at = author_post.posted_at
 
-    return df
+    return pd.concat([df, _formatting(levelled)], axis=1)
 
 
 def _e5_embeddings(texts: list[str], results_dir: Path) -> np.ndarray:
@@ -266,10 +379,13 @@ def _text_comparison(history: pd.DataFrame, vectors) -> np.ndarray:
 
                 last_start = max(0, start - N_LAST)
                 candidates = (
-                    np.flatnonzero(np.isfinite(residuals[last_start:start])) + last_start
+                    np.flatnonzero(np.isfinite(residuals[last_start:start]))
+                    + last_start
                 )[::-1]
                 if len(candidates):
-                    similarities = cosine_similarity(current, author_vectors[candidates])
+                    similarities = cosine_similarity(
+                        current, author_vectors[candidates]
+                    )
                     # Candidates are newest first; stable sorting resolves equal cosines.
                     nearest = np.argsort(-similarities, axis=1, kind="stable")[
                         :, :N_NEAREST
@@ -308,7 +424,7 @@ def _text_bm25(history: pd.DataFrame, train_rows: np.ndarray) -> np.ndarray:
         raise ValueError("BM25 class cutoffs require finite training residuals")
     low, high = fit_cutoffs(train["resid"])
     labels = classify(history["resid"], low, high).to_numpy()
-    result = np.zeros((len(history), len(TEXT_BM25_NUM)), dtype=np.float32)
+    result = np.zeros((len(history), len(TEXT_COMPARISON_BM25_NUM)), dtype=np.float32)
 
     vectorizer = CountVectorizer(dtype=np.float32)
     analyze = vectorizer.build_analyzer()
@@ -319,9 +435,7 @@ def _text_bm25(history: pd.DataFrame, train_rows: np.ndarray) -> np.ndarray:
     texts = history["text"].fillna("").tolist()
     counts = vectorizer.transform(texts)
     document_frequency = train_counts.getnnz(axis=0)
-    idf = np.log1p(
-        (len(train) - document_frequency + 0.5) / (document_frequency + 0.5)
-    )
+    idf = np.log1p((len(train) - document_frequency + 0.5) / (document_frequency + 0.5))
     average_length = float(train_counts.sum() / len(train))
     # Count all words in document length, including words outside train vocabulary.
     lengths = np.fromiter((len(analyze(text)) for text in texts), dtype=np.float64)
@@ -363,7 +477,9 @@ def _text_bm25(history: pd.DataFrame, train_rows: np.ndarray) -> np.ndarray:
                     selected = (top_labels == class_id) & (top_scores > 0)
                     class_scores = np.where(selected, top_scores, 0)
                     result[positions[start:end], 3 * column] = selected.sum(axis=1)
-                    result[positions[start:end], 3 * column + 1] = class_scores.sum(axis=1)
+                    result[positions[start:end], 3 * column + 1] = class_scores.sum(
+                        axis=1
+                    )
                     result[positions[start:end], 3 * column + 2] = (
                         class_scores * top_resid
                     ).sum(axis=1)
@@ -388,7 +504,7 @@ def prepare(
     requested = set(feature_names)
     compare_tfidf = bool(requested.intersection(TEXT_COMPARISON_TFIDF_NUM))
     compare_e5 = bool(requested.intersection(TEXT_COMPARISON_E5_NUM))
-    need_bm25 = bool(requested.intersection(TEXT_BM25_NUM))
+    need_bm25 = bool(requested.intersection(TEXT_COMPARISON_BM25_NUM))
     need_comparison = compare_tfidf or compare_e5 or need_bm25
     need_tfidf = bool(requested.intersection(TEXT_TFIDF_NUM)) or compare_tfidf
     need_svd = bool(requested.intersection(TEXT_SVD_NUM))
@@ -428,12 +544,16 @@ def prepare(
         comparison = _text_bm25(history, train_rows)
         train_parts.append(
             pd.DataFrame(
-                comparison[train_rows], index=train.index, columns=TEXT_BM25_NUM
+                comparison[train_rows],
+                index=train.index,
+                columns=TEXT_COMPARISON_BM25_NUM,
             )
         )
         test_parts.append(
             pd.DataFrame(
-                comparison[test_rows], index=test.index, columns=TEXT_BM25_NUM
+                comparison[test_rows],
+                index=test.index,
+                columns=TEXT_COMPARISON_BM25_NUM,
             )
         )
 

@@ -48,7 +48,8 @@ BASELINE = (
 CONFIGURATIONS = {
     "baseline": BASELINE,
     "estimates": BASELINE + features.ESTIMATES_NUM,
-    "text_bm25": BASELINE + features.TEXT_BM25_NUM,
+    "formatting": BASELINE + features.FORMATTING_NUM,
+    "text_bm25": BASELINE + features.TEXT_COMPARISON_BM25_NUM,
     # "text_tf_idf": BASELINE + features.TEXT_TFIDF_NUM,
     # "text_tf_idf_truncatedsvd": BASELINE + features.TEXT_SVD_NUM,
     # "text_only_tf_idf_truncatedsvd": features.TEXT_SVD_NUM,
@@ -56,16 +57,19 @@ CONFIGURATIONS = {
     "text_tfidfsvd_e5": BASELINE + features.TEXT_SVD_NUM + features.TEXT_E5_NUM,
     "comparison_tfidf": BASELINE + features.TEXT_COMPARISON_TFIDF_NUM,
     "comparison_e5": BASELINE + features.TEXT_COMPARISON_E5_NUM,
+    "comparison_bm25": BASELINE + features.TEXT_COMPARISON_BM25_NUM,
     "comparison_tfidf_e5": BASELINE
     + features.TEXT_COMPARISON_TFIDF_NUM
     + features.TEXT_COMPARISON_E5_NUM,
     "text_comparison": BASELINE
+    + features.TEXT_E5_NUM
     + features.TEXT_COMPARISON_TFIDF_NUM
     + features.TEXT_COMPARISON_E5_NUM
-    + features.TEXT_E5_NUM,
+    + features.TEXT_COMPARISON_BM25_NUM,
     "text_comparison_estimates": BASELINE
     + features.TEXT_COMPARISON_TFIDF_NUM
     + features.TEXT_COMPARISON_E5_NUM
+    + features.TEXT_COMPARISON_BM25_NUM
     + features.TEXT_E5_NUM
     + features.ESTIMATES_NUM,
 }

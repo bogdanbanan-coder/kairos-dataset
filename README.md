@@ -143,6 +143,12 @@ Class cutoffs, vocabulary, IDF and average document length use train only.
 BM25 uses word unigrams with `BM25_K1 = 1.5` and `BM25_B = 0.75` and requires
 no E5 embeddings. The nine scalars use `StandardScaler`.
 
+The `formatting` row adds 15 numeric features to the baseline: emoji counts and
+placement, punctuation, uppercase usage, paragraph structure, list items, and
+differences in emoji count, uppercase ratio and paragraph count from the author's
+last 20 strictly earlier posts. The history window is `FORMATTING_HISTORY` in
+`kairos/features.py`. These features use `StandardScaler` and require no embeddings.
+
 All feature groups, including text vectors, are defined in `kairos/features.py`
 as lists of column names. See [the architecture guide](docs/ARCHITECTURE-SPINE.md)
 for the data flow and how to add features and experiments.
