@@ -132,6 +132,17 @@ Undefined cosines and sums with no candidates are zero. Negative cosines are
 preserved. These rows contain the baseline and three scalar features, without
 the original text coordinates. The scalars use `StandardScaler`.
 
+The `text_bm25` row adds nine scalar features to the baseline. The current post
+is a BM25 query over the author's last `N_LAST = 20` strictly earlier posts.
+Candidates without finite residuals are excluded within this window. Up to
+`BM25_TOP_N = 12` positive matches are selected, then grouped into `below`,
+`typical`, and `above`. Each class contributes the
+match count, the sum of BM25 scores (`norm_sum_bm25_*`), and the sum of
+`BM25 score * resid`. The sums are not divided by the number of matches.
+Class cutoffs, vocabulary, IDF and average document length use train only.
+BM25 uses word unigrams with `BM25_K1 = 1.5` and `BM25_B = 0.75` and requires
+no E5 embeddings. The nine scalars use `StandardScaler`.
+
 All feature groups, including text vectors, are defined in `kairos/features.py`
 as lists of column names. See [the architecture guide](docs/ARCHITECTURE-SPINE.md)
 for the data flow and how to add features and experiments.

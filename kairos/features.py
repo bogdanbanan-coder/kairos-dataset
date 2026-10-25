@@ -5,7 +5,7 @@ history    who wrote it: the author's level and spread, rhythm, follower count
 artefact   how it was collected: the post's age at crawl and its place in the
            author's run
 text       TF-IDF, normalized SVD, and multilingual E5 vectors
-comparison text similarity to the author's earlier posts and their residuals
+comparison cosine similarity and BM25 class statistics from earlier author posts
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import TruncatedSVD
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import (
@@ -28,7 +28,7 @@ from sklearn.preprocessing import (
     StandardScaler,
 )
 
-from kairos.label import MIN_HISTORY
+from kairos.label import CLASS_NAMES, MIN_HISTORY, classify, fit_cutoffs
 
 # The release replaces links, handles and names with placeholders such as ⟨URL⟩,
 # ⟨HANDLE⟩ and ⟨PERSON_3⟩, so the counters look for those as well as raw text.
@@ -73,6 +73,15 @@ TEXT_COMPARISON_TFIDF_NUM = [
     "last_nearest_resid_tfidf",
 ]
 
+BM25_TOP_N = 12
+BM25_K1 = 1.5
+BM25_B = 0.75
+TEXT_BM25_NUM = [
+    f"{stat}_bm25_{class_name}"
+    for class_name in CLASS_NAMES.values()
+    for stat in ("number_close", "norm_sum", "resid_sum")
+]
+
 TFIDF_MAX_FEATURES = 5000
 SVD_COMPONENTS = 128
 E5_DIMENSIONS = 384
@@ -84,6 +93,7 @@ TEXT_TFIDF_NUM = [f"text_tfidf_{i:04d}" for i in range(TFIDF_MAX_FEATURES)]
 TEXT_SVD_NUM = [f"text_svd_{i:03d}" for i in range(SVD_COMPONENTS)]
 TEXT_E5_NUM = [f"text_e5_{i:03d}" for i in range(E5_DIMENSIONS)]
 TEXT_NUM = TEXT_TFIDF_NUM + TEXT_SVD_NUM + TEXT_E5_NUM
+
 
 
 def build(levelled: pd.DataFrame, followers: pd.Series) -> pd.DataFrame:
@@ -275,6 +285,93 @@ def _text_comparison(history: pd.DataFrame, vectors) -> np.ndarray:
     return result
 
 
+def _text_bm25(history: pd.DataFrame, train_rows: np.ndarray) -> np.ndarray:
+    """Aggregate top BM25 neighbours by class using strictly earlier author posts.
+
+    Vocabulary, IDF, average document length and residual cutoffs use train only.
+    The query is the current post; candidates are the last N_LAST earlier posts.
+    """
+    if (
+        type(N_LAST) is not int
+        or N_LAST < 1
+        or type(BM25_TOP_N) is not int
+        or BM25_TOP_N < 1
+    ):
+        raise ValueError("N_LAST and BM25_TOP_N must be positive integers")
+    if not np.isfinite(BM25_K1) or BM25_K1 <= 0 or not 0 <= BM25_B <= 1:
+        raise ValueError("BM25 requires a finite K1 > 0 and 0 <= B <= 1")
+
+    history = history.reset_index(drop=True)
+    train = history.iloc[train_rows]
+    train_resid = train["resid"].to_numpy(dtype=np.float64, na_value=np.nan)
+    if not len(train) or not np.isfinite(train_resid).all():
+        raise ValueError("BM25 class cutoffs require finite training residuals")
+    low, high = fit_cutoffs(train["resid"])
+    labels = classify(history["resid"], low, high).to_numpy()
+    result = np.zeros((len(history), len(TEXT_BM25_NUM)), dtype=np.float32)
+
+    vectorizer = CountVectorizer(dtype=np.float32)
+    analyze = vectorizer.build_analyzer()
+    train_text = train["text"].fillna("").tolist()
+    if not any(analyze(text) for text in train_text):
+        return result
+    train_counts = vectorizer.fit_transform(train_text)
+    texts = history["text"].fillna("").tolist()
+    counts = vectorizer.transform(texts)
+    document_frequency = train_counts.getnnz(axis=0)
+    idf = np.log1p(
+        (len(train) - document_frequency + 0.5) / (document_frequency + 0.5)
+    )
+    average_length = float(train_counts.sum() / len(train))
+    # Count all words in document length, including words outside train vocabulary.
+    lengths = np.fromiter((len(analyze(text)) for text in texts), dtype=np.float64)
+    length_norm = BM25_K1 * (1 - BM25_B + BM25_B * lengths / average_length)
+    weights = counts.copy()
+    term_frequency = weights.data
+    weights.data = (
+        idf[weights.indices]
+        * term_frequency
+        * (BM25_K1 + 1)
+        / (term_frequency + np.repeat(length_norm, np.diff(weights.indptr)))
+    ).astype(np.float32)
+
+    for _, posts in history.groupby("author", sort=False):
+        posts = posts.dropna(subset=["posted_at"]).sort_values(
+            "posted_at", kind="mergesort"
+        )
+        positions = posts.index.to_numpy()
+        author_counts, author_weights = counts[positions], weights[positions]
+        residuals = posts["resid"].to_numpy(dtype=np.float64, na_value=np.nan)
+        author_labels = labels[positions]
+        start = 0
+        for _, simultaneous in posts.groupby("posted_at", sort=False):
+            end = start + len(simultaneous)
+            last_start = max(0, start - N_LAST)
+            candidates = (
+                np.flatnonzero(np.isfinite(residuals[last_start:start])) + last_start
+            )[::-1]
+            if len(candidates):
+                query = author_counts[start:end].copy()
+                # Each distinct query word contributes once to the BM25 sum.
+                query.data.fill(1)
+                scores = (query @ author_weights[candidates].T).toarray()
+                nearest = np.argsort(-scores, axis=1, kind="stable")[:, :BM25_TOP_N]
+                top_scores = np.take_along_axis(scores, nearest, axis=1)
+                top_labels = author_labels[candidates][nearest]
+                top_resid = residuals[candidates][nearest]
+                for column, class_id in enumerate(CLASS_NAMES):
+                    selected = (top_labels == class_id) & (top_scores > 0)
+                    class_scores = np.where(selected, top_scores, 0)
+                    result[positions[start:end], 3 * column] = selected.sum(axis=1)
+                    result[positions[start:end], 3 * column + 1] = class_scores.sum(axis=1)
+                    result[positions[start:end], 3 * column + 2] = (
+                        class_scores * top_resid
+                    ).sum(axis=1)
+            start = end
+
+    return result
+
+
 def prepare(
     train: pd.DataFrame,
     test: pd.DataFrame,
@@ -291,11 +388,12 @@ def prepare(
     requested = set(feature_names)
     compare_tfidf = bool(requested.intersection(TEXT_COMPARISON_TFIDF_NUM))
     compare_e5 = bool(requested.intersection(TEXT_COMPARISON_E5_NUM))
-    need_comparison = compare_tfidf or compare_e5
+    need_bm25 = bool(requested.intersection(TEXT_BM25_NUM))
+    need_comparison = compare_tfidf or compare_e5 or need_bm25
     need_tfidf = bool(requested.intersection(TEXT_TFIDF_NUM)) or compare_tfidf
     need_svd = bool(requested.intersection(TEXT_SVD_NUM))
     need_e5 = bool(requested.intersection(TEXT_E5_NUM)) or compare_e5
-    if not (need_tfidf or need_svd or need_e5):
+    if not (need_tfidf or need_svd or need_e5 or need_bm25):
         return train, test
 
     train_text = train["text"].fillna("").tolist()
@@ -325,6 +423,19 @@ def prepare(
             raise ValueError("some train/test posts are missing from history")
         texts = history["text"].fillna("").tolist()
     train_parts, test_parts = [train], [test]
+
+    if need_bm25:
+        comparison = _text_bm25(history, train_rows)
+        train_parts.append(
+            pd.DataFrame(
+                comparison[train_rows], index=train.index, columns=TEXT_BM25_NUM
+            )
+        )
+        test_parts.append(
+            pd.DataFrame(
+                comparison[test_rows], index=test.index, columns=TEXT_BM25_NUM
+            )
+        )
 
     if need_tfidf or need_svd:
         vectorizer = TfidfVectorizer(

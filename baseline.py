@@ -48,12 +48,26 @@ BASELINE = (
 CONFIGURATIONS = {
     "baseline": BASELINE,
     "estimates": BASELINE + features.ESTIMATES_NUM,
-    "text_tf_idf": BASELINE + features.TEXT_TFIDF_NUM,
-    "text_tf_idf_truncatedsvd": BASELINE + features.TEXT_SVD_NUM,
-    "text_only_tf_idf_truncatedsvd": features.TEXT_SVD_NUM,
-    "text_multilingual_e5_small": BASELINE + features.TEXT_E5_NUM,
-    "text_comparison_e5": BASELINE + features.TEXT_COMPARISON_E5_NUM,
-    "text_comparison_tfidf": BASELINE + features.TEXT_COMPARISON_TFIDF_NUM,
+    "text_bm25": BASELINE + features.TEXT_BM25_NUM,
+    # "text_tf_idf": BASELINE + features.TEXT_TFIDF_NUM,
+    # "text_tf_idf_truncatedsvd": BASELINE + features.TEXT_SVD_NUM,
+    # "text_only_tf_idf_truncatedsvd": features.TEXT_SVD_NUM,
+    # "text_multilingual_e5_small": BASELINE + features.TEXT_E5_NUM,
+    "text_tfidfsvd_e5": BASELINE + features.TEXT_SVD_NUM + features.TEXT_E5_NUM,
+    "comparison_tfidf": BASELINE + features.TEXT_COMPARISON_TFIDF_NUM,
+    "comparison_e5": BASELINE + features.TEXT_COMPARISON_E5_NUM,
+    "comparison_tfidf_e5": BASELINE
+    + features.TEXT_COMPARISON_TFIDF_NUM
+    + features.TEXT_COMPARISON_E5_NUM,
+    "text_comparison": BASELINE
+    + features.TEXT_COMPARISON_TFIDF_NUM
+    + features.TEXT_COMPARISON_E5_NUM
+    + features.TEXT_E5_NUM,
+    "text_comparison_estimates": BASELINE
+    + features.TEXT_COMPARISON_TFIDF_NUM
+    + features.TEXT_COMPARISON_E5_NUM
+    + features.TEXT_E5_NUM
+    + features.ESTIMATES_NUM,
 }
 
 
@@ -73,7 +87,7 @@ def logistic_regression() -> LogisticRegression:
 
 MODELS = {
     "hist_gradient_boosting": gradient_boosting,
-    "logistic_regression": logistic_regression,
+    # "logistic_regression": logistic_regression,
 }
 
 
